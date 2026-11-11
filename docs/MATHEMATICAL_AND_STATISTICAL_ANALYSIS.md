@@ -115,14 +115,14 @@ $$W_{\text{global}}(t) = \min_{j \in \{1, \dots, K\}} W_j(t)$$
 
 #### Problema Clásico (Shard Silencioso):
 Si una máquina o sensor se desconecta, el shard $m$ deja de recibir datos. Por lo tanto:
-$$\lim_{t \to \infty} W_m(t) = t_{\text{last\_event}, m} = \text{constante}$$
+$$\lim_{t \to \infty} W_m(t) = t_{\mathrm{last}, m} = \text{constante}$$
 
-En ausencia de mitigación, $W_{\text{global}}(t)$ permanece estancada en $t_{\text{last\_event}, m}$, provocando el **congelamiento perpetuo de todas las ventanas deslizantes de los demás sensores de la flota**.
+En ausencia de mitigación, $W_{\text{global}}(t)$ permanece estancada en $t_{\mathrm{last}, m}$, provocando el **congelamiento perpetuo de todas las ventanas deslizantes de los demás sensores de la flota**.
 
 #### Solución Implementada (`withIdleness`):
 Se define un predicado de inactividad con umbral temporal $\tau_{\text{idle}} = 30\text{ segundos}$:
 
-$$\text{ActiveShards}(t) = \left\{ j \in \{1, \dots, K\} \;\middle|\; t_{\text{current}} - t_{\text{last\_event}, j} \le \tau_{\text{idle}} \right\}$$
+$$\text{ActiveShards}(t) = \left\{ j \in \{1, \dots, K\} \;\middle|\; t_{\text{current}} - t_{\mathrm{last}, j} \le \tau_{\text{idle}} \right\}$$
 
 La marca de agua evoluciona dinámicamente como:
 
@@ -163,7 +163,7 @@ stateDiagram-v2
 
 $$\delta(q_0, e) = \begin{cases} \{q_0, q_1\} & \text{si } e.\text{temperature} > 85.0^\circ\text{C} \\ \{q_0\} & \text{en otro caso} \end{cases}$$
 
-$$\delta(q_1, e) = \begin{cases} \{q_2\} & \text{si } e.\text{vibration\_rms} > 4.5\text{ mm/s} \land (e.t_e - t_{\text{spike}} \le 30\text{s}) \\ \emptyset & \text{si } (e.t_e - t_{\text{spike}} > 30\text{s}) \quad \text{[Timeout / Purga en RocksDB]} \\ \{q_1\} & \text{en otro caso} \end{cases}$$
+$$\delta(q_1, e) = \begin{cases} \{q_2\} & \text{si } e.V_{\mathrm{RMS}} > 4.5\text{ mm/s} \land (e.t_e - t_{\text{spike}} \le 30\text{s}) \\ \emptyset & \text{si } (e.t_e - t_{\text{spike}} > 30\text{s}) \quad \text{[Timeout / Purga en RocksDB]} \\ \{q_1\} & \text{en otro caso} \end{cases}$$
 
 ### Complejidad Espacial en RocksDB StateBackend:
 Dado que el stream está particionado mediante `.keyBy(SensorEvent::getSensorId)`, el número máximo de instancias concurrentes del autómata es igual al cardinal de activos $|\mathcal{K}|$. Como cada activo mantiene a lo sumo un estado parcial activo con tiempo de expiración $\mathcal{T} = 30\text{s}$:
@@ -233,7 +233,7 @@ $$\chi^2_{0.999}(4) = 18.467$$
 ### 5.1. Token Determinista de Idempotencia
 Cada detección confirmada por el autómata CEP emite un token criptográfico generado a partir del espacio de estado de la falla:
 
-$$\text{IdempotencyKey} = \mathcal{H}\left( \text{sensor\_id} \parallel \text{pattern\_name} \parallel t_{\text{start}} \parallel t_{\text{end}} \right)$$
+$$\text{IdempotencyKey} = \mathcal{H}\left( \mathrm{sensorId} \parallel \mathrm{patternName} \parallel t_{\text{start}} \parallel t_{\text{end}} \right)$$
 
 Donde $\mathcal{H}: \{0, 1\}^* \to \{0, 1\}^{256}$ es la función hash criptográfica SHA-256 (FIPS PUB 180-4).
 
