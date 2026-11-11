@@ -202,3 +202,4 @@ Para maximizar el impacto operativo, se establecen dos vías de inferencia segú
 * Las alertas o vectores de métricas se enrutan de forma asíncrona hacia **Amazon SQS FIFO**.
 * Una función **AWS Lambda** empaquetada como imagen de contenedor (o cargando el artefacto desde S3) ejecuta la inferencia estadística, calcula el `failure_probability_score`, evalúa el umbral $\tau^*$ y registra el diagnóstico con idempotencia en DynamoDB antes de notificar a SNS.
 * **Ventaja:** Cero impacto en el heap y memoria del clúster Flink, autoescalado serverless elástico y desacoplamiento total.
+

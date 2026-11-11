@@ -268,3 +268,4 @@ out_path = os.path.join(os.path.dirname(__file__), "..", "notebooks", "03_predic
 with open(out_path, "w", encoding="utf-8") as f:
     json.dump(notebook_content, f, indent=1, ensure_ascii=False)
 print("[✓] Notebook 03 created successfully at:", os.path.abspath(out_path))
+
