@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Technical Architecture & System Design — Flink & Kinesis Streaming</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    code, pre, .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    
+    /* Flow Animations */
+    @keyframes flowPulse {
+      0% { stroke-dashoffset: 40; }
+      100% { stroke-dashoffset: 0; }
+    }
+    
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.4)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 10px rgba(14, 165, 233, 0.8)); }
+    }
+    
+    .stream-line {
+      stroke-dasharray: 6 6;
+      animation: flowPulse 1.2s linear infinite;
+    }
+    .alert-line {
+      stroke-dasharray: 6 6;
+      animation: flowPulse 0.9s linear infinite;
+    }
+    .dlq-line {
+      stroke-dasharray: 4 4;
+      animation: flowPulse 2s linear infinite;
+    }
+    
+    .node-interactive {
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .node-interactive:hover {
+      filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));
+      transform: translateY(-2px);
+    }
+    
+    .node-active {
+      filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.8)) !important;
+      stroke: #38bdf8 !important;
+      stroke-width: 2.5px !important;
+    }
+
+    .pulse-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .4; transform: scale(1.15); }
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-[#080c14] text-slate-100 min-h-screen p-3 md:p-8 custom-scrollbar">
+
+  <!-- Header Section -->
+  <header class="max-w-7xl mx-auto mb-6 border-b border-slate-800/80 pb-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-3 mb-2">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-950/80 text-sky-400 border border-sky-800">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 mr-1.5 pulse-dot"></span>
+            PROYECTO ODYSSEUS • STREAMING MLOps
+          </span>
+          <span class="text-xs text-slate-400 font-mono">EGM Elephant-Goldfish Architecture</span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+          <span>Technical Architecture & System Design</span>
+          <span class="text-xs px-2 py-1 bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 rounded font-mono font-normal">v1.2 Production Spec</span>
+        </h1>
+        <p class="text-xs md:text-sm text-slate-400 mt-1 max-w-3xl">
+          High-Throughput IoT Monitoring, Stateful Windowing & Complex Event Processing (CEP) with Apache Flink 1.18 (Java 17) & AWS Kinesis.
+        </p>
+      </div>
+
+      <div class="flex flex-col md:items-end text-xs text-slate-400 border-l md:border-l-0 border-slate-800 pl-4 md:pl-0">
+        <div class="font-semibold text-slate-200">Guillén Concepción</div>
+        <div class="text-sky-400 font-mono">Senior Data Scientist & MLOps Engineer</div>
+        <div class="flex flex-wrap gap-1.5 mt-2">
+          <span class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 text-[10px] text-sky-300 font-mono">Flink 1.18</span>
+          <span class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 text-[10px] text-amber-300 font-mono">AWS Kinesis</span>
+          <span class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 text-[10px] text-indigo-300 font-mono">SQS FIFO</span>
+          <span class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 text-[10px] text-emerald-300 font-mono">Glue Projection</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto space-y-6">
+
+    <!-- Interactive Navigation Tabs -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3" id="tab-nav">
+      <div class="flex flex-wrap gap-2">
+        <button onclick="switchTab('diagram')" id="tab-btn-diagram" class="px-4 py-2 text-xs font-bold rounded-lg bg-sky-600 text-white transition-all shadow-lg shadow-sky-600/30 flex items-center gap-1.5">
+          <span>🗺️ Topología & Flujo Visual</span>
+        </button>
+        <button onclick="switchTab('tiers')" id="tab-btn-tiers" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 transition-all border border-slate-700 flex items-center gap-1.5">
+          <span>🏛️ Desglose de 4 Capas (Tiers)</span>
+        </button>
+        <button onclick="switchTab('simulator')" id="tab-btn-simulator" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 transition-all border border-slate-700 flex items-center gap-1.5">
+          <span>⚡ Simulador CEP en Tiempo Real</span>
+        </button>
+        <button onclick="switchTab('specs')" id="tab-btn-specs" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 transition-all border border-slate-700 flex items-center gap-1.5">
+          <span>📐 Esquemas & Predicados</span>
+        </button>
+        <button onclick="switchTab('slas')" id="tab-btn-slas" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 transition-all border border-slate-700 flex items-center gap-1.5">
+          <span>🛡️ Resiliencia & SLAs</span>
+        </button>
+      </div>
+
+      <!-- Live Stream Status Pill -->
+      <div class="hidden lg:flex items-center gap-2 text-[11px] font-mono text-slate-400 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span>Stream Status: <strong class="text-emerald-400">ACTIVE (1,000 QPS)</strong></span>
+        <span class="text-slate-600">|</span>
+        <span>Lag: <strong class="text-sky-400">12 ms</strong></span>
+      </div>
+    </div>
+
+    <!-- TAB 1: VISUAL PIPELINE DIAGRAM WITH INTERACTIVE HIGHLIGHTING -->
+    <section id="tab-diagram" class="space-y-6">
+
+      <!-- Path Filter Controls -->
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/70 border border-slate-800/80 p-3 rounded-xl">
+        <div class="flex items-center gap-2 text-xs text-slate-300">
+          <span class="text-slate-400 font-medium">Filtrar Flujo en Diagrama:</span>
+          <button onclick="filterPath('all')" id="filter-all" class="px-2.5 py-1 rounded text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40">
+            Todos los Flujos
+          </button>
+          <button onclick="filterPath('analytics')" id="filter-analytics" class="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700">
+            📊 Ruta Analítica (S3 / Athena)
+          </button>
+          <button onclick="filterPath('alerts')" id="filter-alerts" class="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700">
+            🚨 Ruta Crítica de Alertas (CEP / SNS)
+          </button>
+          <button onclick="filterPath('dlq')" id="filter-dlq" class="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700">
+            ⚠️ Salida Lateral DLQ
+          </button>
+        </div>
+        <div class="text-[11px] text-slate-400 font-mono hidden sm:block">
+          💡 Haga clic en cualquier nodo para ver sus contratos y especificaciones
+        </div>
+      </div>
+
+      <!-- Main SVG Architecture Graph Canvas -->
+      <div class="bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 rounded-2xl p-4 md:p-6 overflow-x-auto shadow-2xl relative">
+
+        <svg viewBox="0 0 1180 580" class="w-full min-w-[1050px] select-none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- Gradients -->
+            <linearGradient id="gradIngest" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0284c7" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#0369a1" stop-opacity="0.08"/>
+            </linearGradient>
+            <linearGradient id="gradFlink" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#059669" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#047857" stop-opacity="0.08"/>
+            </linearGradient>
+            <linearGradient id="gradStorage" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#d97706" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#b45309" stop-opacity="0.08"/>
+            </linearGradient>
+            <linearGradient id="gradAlert" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#3730a3" stop-opacity="0.08"/>
+            </linearGradient>
+            <linearGradient id="gradDlq" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#dc2626" stop-opacity="0.2"/>
+              <stop offset="100%" stop-color="#991b1b" stop-opacity="0.05"/>
+            </linearGradient>
+
+            <!-- Arrow Markers -->
+            <marker id="arrow-sky" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#38bdf8"/>
+            </marker>
+            <marker id="arrow-emerald" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#34d399"/>
+            </marker>
+            <marker id="arrow-amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#fbbf24"/>
+            </marker>
+            <marker id="arrow-indigo" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#818cf8"/>
+            </marker>
+            <marker id="arrow-rose" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#f87171"/>
+            </marker>
+          </defs>
+
+          <!-- ================= BACKGROUND BOUNDARY BOXES ================= -->
+          
+          <!-- Box 1: Ingestion Zone -->
+          <rect x="20" y="30" width="220" height="490" rx="16" fill="url(#gradIngest)" stroke="#0284c7" stroke-width="1.2" stroke-dasharray="4 4" class="path-element path-analytics path-alerts"/>
+          <text x="35" y="55" fill="#38bdf8" font-size="11" font-weight="700" letter-spacing="1.5" font-family="'JetBrains Mono', monospace">TIER 1 • INGESTION</text>
+
+          <!-- Box 2: Apache Flink Core Engine -->
+          <rect x="270" y="30" width="350" height="490" rx="16" fill="url(#gradFlink)" stroke="#059669" stroke-width="1.2" stroke-dasharray="4 4" class="path-element path-analytics path-alerts path-dlq"/>
+          <text x="285" y="55" fill="#34d399" font-size="11" font-weight="700" letter-spacing="1.5" font-family="'JetBrains Mono', monospace">TIER 2 • FLINK STREAM ENGINE (JAVA 17)</text>
+
+          <!-- Box 3: Storage & Analytics Zone -->
+          <rect x="650" y="30" width="240" height="235" rx="16" fill="url(#gradStorage)" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 4" class="path-element path-analytics"/>
+          <text x="665" y="55" fill="#fbbf24" font-size="11" font-weight="700" letter-spacing="1.5" font-family="'JetBrains Mono', monospace">TIER 3 • STORAGE & CATALOG</text>
+
+          <!-- Box 4: Alerting & Resilient Notification Zone -->
+          <rect x="650" y="285" width="510" height="235" rx="16" fill="url(#gradAlert)" stroke="#4f46e5" stroke-width="1.2" stroke-dasharray="4 4" class="path-element path-alerts"/>
+          <text x="665" y="310" fill="#a5b4fc" font-size="11" font-weight="700" letter-spacing="1.5" font-family="'JetBrains Mono', monospace">TIER 4 • IDEMPOTENT ALERTING & SNS</text>
+
+          <!-- Box 5: DLQ Side Output -->
+          <rect x="915" y="30" width="245" height="235" rx="16" fill="url(#gradDlq)" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4 4" class="path-element path-dlq"/>
+          <text x="930" y="55" fill="#f87171" font-size="11" font-weight="700" letter-spacing="1.5" font-family="'JetBrains Mono', monospace">DEAD-LETTER QUEUE (DLQ)</text>
+
+
+          <!-- ================= CONNECTING STREAM PATHS (WIRES) ================= -->
+
+          <!-- Path: IoT Generator -> Kinesis -->
+          <path d="M 190 140 L 80 140 L 80 270 L 130 270" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-sky)" class="stream-line path-element path-analytics path-alerts"/>
+          
+          <!-- Path: Kinesis -> Flink Parser -->
+          <path d="M 210 320 L 290 320 L 290 140 L 310 140" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrow-sky)" class="stream-line path-element path-analytics path-alerts"/>
+
+          <!-- Path: Flink Parser -> Watermarking -->
+          <path d="M 450 140 L 475 140" fill="none" stroke="#34d399" stroke-width="2.5" marker-end="url(#arrow-emerald)" class="stream-line path-element path-analytics path-alerts"/>
+
+          <!-- Path: Watermarking -> Sliding Windows (Branch A) -->
+          <path d="M 545 170 L 545 235 L 430 235 L 430 265" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-emerald)" class="stream-line path-element path-analytics"/>
+
+          <!-- Path: Watermarking -> CEP Pattern Engine (Branch B) -->
+          <path d="M 570 170 L 570 380 L 480 380 L 480 405" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-emerald)" class="stream-line path-element path-alerts"/>
+
+          <!-- Path: Flink Parser -> DLQ Side Output -->
+          <path d="M 380 90 L 380 75 L 940 75 L 940 105" fill="none" stroke="#f87171" stroke-width="1.8" marker-end="url(#arrow-rose)" class="dlq-line path-element path-dlq"/>
+
+          <!-- Path: Sliding Windows -> S3 Curated -->
+          <path d="M 525 305 L 670 305 L 670 145 L 690 145" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrow-amber)" class="stream-line path-element path-analytics"/>
+
+          <!-- Path: S3 Curated -> Glue Catalog & Athena -->
+          <path d="M 770 185 L 770 215" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrow-amber)" class="stream-line path-element path-analytics"/>
+
+          <!-- Path: CEP Engine -> SQS FIFO Sink -->
+          <path d="M 550 445 L 670 445" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow-indigo)" class="alert-line path-element path-alerts"/>
+
+          <!-- Path: SQS FIFO -> Lambda Alerter -->
+          <path d="M 795 445 L 825 445" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow-indigo)" class="alert-line path-element path-alerts"/>
+
+          <!-- Path: Lambda -> DynamoDB Barrier (Bi-directional check) -->
+          <path d="M 885 415 L 885 365 L 965 365" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-dasharray="3 3" marker-end="url(#arrow-indigo)" class="path-element path-alerts"/>
+
+          <!-- Path: Lambda -> SNS Topic -->
+          <path d="M 945 445 L 980 445" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrow-indigo)" class="alert-line path-element path-alerts"/>
+
+          <!-- Path: SNS Topic -> On-Call Engineers -->
+          <path d="M 1060 445 L 1090 445" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow-indigo)" class="alert-line path-element path-alerts"/>
+
+
+          <!-- ================= ARCHITECTURE NODES (INTERACTIVE) ================= -->
+
+          <!-- NODE 1: IoT Fleet Generator -->
+          <g class="node-interactive path-element path-analytics path-alerts" onclick="selectNode('generator')" id="svg-node-generator">
+            <rect x="40" y="80" width="180" height="75" rx="10" fill="#0f172a" stroke="#0ea5e9" stroke-width="1.5"/>
+            <circle cx="65" cy="117" r="14" fill="#0369a1"/>
+            <text x="65" y="122" font-size="14" text-anchor="middle">📡</text>
+            <text x="90" y="107" fill="#f8fafc" font-size="12" font-weight="700">IoT Telemetry Fleet</text>
+            <text x="90" y="123" fill="#94a3b8" font-size="10" font-family="'JetBrains Mono', monospace">1,000–5,000 QPS</text>
+            <text x="90" y="137" fill="#38bdf8" font-size="9" font-family="'JetBrains Mono', monospace">Jitter: ±2.5s Event-Time</text>
+          </g>
+
+          <!-- NODE 2: AWS Kinesis Data Streams -->
+          <g class="node-interactive path-element path-analytics path-alerts" onclick="selectNode('kinesis')" id="svg-node-kinesis">
+            <rect x="40" y="270" width="180" height="85" rx="10" fill="#0f172a" stroke="#0ea5e9" stroke-width="1.8"/>
+            <circle cx="65" cy="312" r="14" fill="#0369a1"/>
+            <text x="65" y="317" font-size="14" text-anchor="middle">⚡</text>
+            <text x="90" y="297" fill="#f8fafc" font-size="12" font-weight="700">AWS Kinesis Streams</text>
+            <text x="90" y="313" fill="#94a3b8" font-size="10" font-family="'JetBrains Mono', monospace">2–10 Shards (Provisioned)</text>
+            <text x="90" y="328" fill="#38bdf8" font-size="9" font-family="'JetBrains Mono', monospace">Key: sensor_id</text>
+            <text x="90" y="342" fill="#64748b" font-size="9">Retention: 24h Buffer</text>
+          </g>
+
+          <!-- NODE 3: Flink Deserializer & Validator -->
+          <g class="node-interactive path-element path-analytics path-alerts path-dlq" onclick="selectNode('parser')" id="svg-node-parser">
+            <rect x="310" y="95" width="140" height="90" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+            <text x="380" y="122" fill="#ecfdf5" font-size="11" font-weight="700" text-anchor="middle">JSON Parser &amp; POJO</text>
+            <text x="380" y="138" fill="#a7f3d0" font-size="9" text-anchor="middle" font-family="'JetBrains Mono', monospace">SensorEvent.java</text>
+            <text x="380" y="153" fill="#6ee7b7" font-size="9" text-anchor="middle">Poison Pill Splitter</text>
+            <rect x="325" y="162" width="110" height="15" rx="4" fill="#022c22"/>
+            <text x="380" y="173" fill="#34d399" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">uid: json-deserializer</text>
+          </g>
+
+          <!-- NODE 4: Watermark Strategy & Idleness Detection -->
+          <g class="node-interactive path-element path-analytics path-alerts" onclick="selectNode('watermark')" id="svg-node-watermark">
+            <rect x="475" y="95" width="135" height="90" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+            <text x="542" y="120" fill="#ecfdf5" font-size="11" font-weight="700" text-anchor="middle">Watermarking</text>
+            <text x="542" y="136" fill="#a7f3d0" font-size="9" text-anchor="middle" font-family="'JetBrains Mono', monospace">BoundedOutOfOrder(5s)</text>
+            <text x="542" y="151" fill="#fcd34d" font-size="9" text-anchor="middle" font-family="'JetBrains Mono', monospace">withIdleness(30s)</text>
+            <rect x="488" y="162" width="110" height="15" rx="4" fill="#022c22"/>
+            <text x="543" y="173" fill="#34d399" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">Anti-Freeze Guard</text>
+          </g>
+
+          <!-- NODE 5: Flink Sliding Window Operator (Branch A) -->
+          <g class="node-interactive path-element path-analytics" onclick="selectNode('windows')" id="svg-node-windows">
+            <rect x="300" y="265" width="225" height="85" rx="10" fill="#022c22" stroke="#10b981" stroke-width="1.8"/>
+            <circle cx="325" cy="307" r="14" fill="#047857"/>
+            <text x="325" y="312" font-size="14" text-anchor="middle">🪟</text>
+            <text x="348" y="292" fill="#ecfdf5" font-size="11" font-weight="700">Sliding Window Aggregator</text>
+            <text x="348" y="308" fill="#a7f3d0" font-size="9" font-family="'JetBrains Mono', monospace">Size: 1 min | Slide: 10 sec</text>
+            <text x="348" y="323" fill="#6ee7b7" font-size="9">Mean/Max/RMS Accumulator</text>
+            <text x="348" y="338" fill="#34d399" font-size="8" font-family="'JetBrains Mono', monospace">RocksDB Incremental Checkpoints</text>
+          </g>
+
+          <!-- NODE 6: Flink CEP Anomaly Engine (Branch B) -->
+          <g class="node-interactive path-element path-alerts" onclick="selectNode('cep')" id="svg-node-cep">
+            <rect x="300" y="405" width="250" height="95" rx="10" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+            <circle cx="325" cy="452" r="14" fill="#4338ca"/>
+            <text x="325" y="457" font-size="14" text-anchor="middle">⚡</text>
+            <text x="348" y="430" fill="#e0e7ff" font-size="11" font-weight="700">Complex Event Processing (CEP)</text>
+            <text x="348" y="446" fill="#c7d2fe" font-size="9" font-family="'JetBrains Mono', monospace">ThermalSpike &gt; 85°C</text>
+            <text x="348" y="460" fill="#fda4af" font-size="9" font-family="'JetBrains Mono', monospace">followedBy(Vibration &gt; 4.5) within(30s)</text>
+            <text x="348" y="475" fill="#a5b4fc" font-size="8" font-family="'JetBrains Mono', monospace">Token: SHA-256(sensor+time)</text>
+            <rect x="348" y="482" width="130" height="12" rx="3" fill="#312e81"/>
+            <text x="413" y="491" fill="#e0e7ff" font-size="7" text-anchor="middle" font-family="'JetBrains Mono', monospace">uid: sensor-cep-engine</text>
+          </g>
+
+          <!-- NODE 7: Amazon S3 Curated Storage -->
+          <g class="node-interactive path-element path-analytics" onclick="selectNode('s3')" id="svg-node-s3">
+            <rect x="690" y="105" width="180" height="80" rx="10" fill="#451a03" stroke="#f59e0b" stroke-width="1.8"/>
+            <circle cx="715" cy="145" r="14" fill="#78350f"/>
+            <text x="715" y="150" font-size="14" text-anchor="middle">🗄️</text>
+            <text x="738" y="128" fill="#fef3c7" font-size="11" font-weight="700">Amazon S3 (Curated)</text>
+            <text x="738" y="144" fill="#fde68a" font-size="9" font-family="'JetBrains Mono', monospace">FileSink 2-Phase Commit</text>
+            <text x="738" y="159" fill="#fcd34d" font-size="9">Snappy Parquet (128 MB)</text>
+            <text x="738" y="173" fill="#d97706" font-size="8" font-family="'JetBrains Mono', monospace">Partition: YYYY/MM/DD/HH</text>
+          </g>
+
+          <!-- NODE 8: Glue Partition Projection & Athena -->
+          <g class="node-interactive path-element path-analytics" onclick="selectNode('athena')" id="svg-node-athena">
+            <rect x="690" y="215" width="180" height="42" rx="8" fill="#1c1917" stroke="#78716c" stroke-width="1.2"/>
+            <text x="780" y="233" fill="#fafaf9" font-size="10" font-weight="700" text-anchor="middle">AWS Glue + Athena SQL</text>
+            <text x="780" y="247" fill="#fbbf24" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">Zero-Crawler Projection</text>
+          </g>
+
+          <!-- NODE 9: SQS FIFO Buffer -->
+          <g class="node-interactive path-element path-alerts" onclick="selectNode('sqs')" id="svg-node-sqs">
+            <rect x="670" y="415" width="125" height="65" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5"/>
+            <text x="732" y="437" fill="#e0e7ff" font-size="10" font-weight="700" text-anchor="middle">Amazon SQS FIFO</text>
+            <text x="732" y="452" fill="#c7d2fe" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">Zero Backpressure</text>
+            <text x="732" y="466" fill="#a5b4fc" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">DedupId: SHA-256</text>
+          </g>
+
+          <!-- NODE 10: AWS Lambda Alerter -->
+          <g class="node-interactive path-element path-alerts" onclick="selectNode('lambda')" id="svg-node-lambda">
+            <rect x="825" y="415" width="120" height="65" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5"/>
+            <text x="885" y="437" fill="#e0e7ff" font-size="10" font-weight="700" text-anchor="middle">AWS Lambda</text>
+            <text x="885" y="452" fill="#c7d2fe" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">Batch: 25 | Win: 5s</text>
+            <text x="885" y="466" fill="#a5b4fc" font-size="8" text-anchor="middle">Atomic Gatekeeper</text>
+          </g>
+
+          <!-- NODE 11: DynamoDB Idempotency Barrier -->
+          <g class="node-interactive path-element path-alerts" onclick="selectNode('dynamodb')" id="svg-node-dynamodb">
+            <rect x="965" y="340" width="175" height="55" rx="8" fill="#172554" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="1052" y="360" fill="#dbeafe" font-size="10" font-weight="700" text-anchor="middle">Amazon DynamoDB</text>
+            <text x="1052" y="374" fill="#93c5fd" font-size="8" text-anchor="middle" font-family="'JetBrains Mono', monospace">attribute_not_exists()</text>
+            <text x="1052" y="386" fill="#60a5fa" font-size="8" text-anchor="middle">TTL: 15 min Anti-Replay</text>
+          </g>
+
+          <!-- NODE 12: Amazon SNS & Notifications -->
+          <g class="node-interactive path-element path-alerts" onclick="selectNode('sns')" id="svg-node-sns">
+            <rect x="980" y="415" width="80" height="65" rx="8" fill="#4c0519" stroke="#f43f5e" stroke-width="1.5"/>
+            <text x="1020" y="442" fill="#ffe4e6" font-size="10" font-weight="700" text-anchor="middle">Amazon SNS</text>
+            <text x="1020" y="458" fill="#fecdd3" font-size="8" text-anchor="middle">Incident Topic</text>
+            <text x="1020" y="471" fill="#fda4af" font-size="7" text-anchor="middle">Email / SMS</text>
+          </g>
+
+          <!-- NODE 13: Engineers / On-Call -->
+          <g class="path-element path-alerts">
+            <circle cx="1120" cy="447" r="20" fill="#1e293b" stroke="#e2e8f0" stroke-width="1.5"/>
+            <text x="1120" y="453" font-size="16" text-anchor="middle">🧑‍💻</text>
+            <text x="1120" y="482" fill="#e2e8f0" font-size="9" text-anchor="middle" font-weight="600">On-Call</text>
+          </g>
+
+          <!-- NODE 14: S3 DLQ (Poison Pill Bucket) -->
+          <g class="node-interactive path-element path-dlq" onclick="selectNode('dlq')" id="svg-node-dlq">
+            <rect x="940" y="105" width="200" height="80" rx="10" fill="#450a0a" stroke="#ef4444" stroke-width="1.5"/>
+            <circle cx="965" cy="145" r="14" fill="#7f1d1d"/>
+            <text x="965" y="150" font-size="14" text-anchor="middle">⚠️</text>
+            <text x="990" y="130" fill="#fef2f2" font-size="11" font-weight="700">S3 DLQ Side-Output</text>
+            <text x="990" y="146" fill="#fca5a5" font-size="9" font-family="'JetBrains Mono', monospace">s3://.../dlq/malformed/</text>
+            <text x="990" y="161" fill="#f87171" font-size="8">OutputTag&lt;String&gt; Isolation</text>
+            <text x="990" y="174" fill="#ef4444" font-size="8">Zero TaskManager Crashes</text>
+          </g>
+
+        </svg>
+
+      </div>
+
+      <!-- Node Dynamic Detail Inspector Panel -->
+      <div id="node-inspector" class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 transition-all duration-300">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+          <div class="flex items-center gap-2">
+            <span id="inspect-badge" class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-sky-950 text-sky-400 border border-sky-800">
+              TIER 2 • CORE STREAM ENGINE
+            </span>
+            <h3 id="inspect-title" class="text-base font-bold text-white">
+              Complex Event Processing (CEP) Engine
+            </h3>
+          </div>
+          <span id="inspect-source" class="text-xs font-mono text-slate-400">
+            com.odysseus.streaming.cep.AnomalyPatterns
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div class="bg-slate-950/80 p-3.5 rounded-lg border border-slate-800/80">
+            <div class="text-slate-400 font-semibold mb-1">Mecanismo &amp; Lógica de Operación</div>
+            <p id="inspect-desc" class="text-slate-300 leading-relaxed font-sans">
+              Autómata Finito No Determinista (NFA) que evalúa en tiempo de evento dos estados consecutivos: Pico Térmico (<code class="text-sky-300">T &gt; 85°C</code>) seguido por Anomalía Cinética (<code class="text-amber-300">V_RMS &gt; 4.5 mm/s</code>) dentro de un umbral temporal de 30 segundos.
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 p-3.5 rounded-lg border border-slate-800/80">
+            <div class="text-slate-400 font-semibold mb-1">Garantía MLOps &amp; Anti-Patrón Mitigado</div>
+            <p id="inspect-guarantee" class="text-emerald-400 leading-relaxed font-sans">
+              Elimina falsos positivos aislados al exigir acoplamiento termomecánico en ventana temporal. Desacoplado asíncronamente hacia SQS para prevenir backpressure en TaskManagers.
+            </p>
+          </div>
+
+          <div class="bg-slate-950/80 p-3.5 rounded-lg border border-slate-800/80">
+            <div class="text-slate-400 font-semibold mb-1">Fórmula o Token Determinista</div>
+            <pre id="inspect-formula" class="text-[11px] font-mono text-amber-300 bg-slate-900 p-2 rounded overflow-x-auto">IdempotencyKey = SHA256(sensor_id + pattern + t_start + t_end)</pre>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- TAB 2: FOUR ARCHITECTURAL TIERS CARDS -->
+    <section id="tab-tiers" class="hidden space-y-6">
+
+      <!-- Metrics Ribbon -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
+          <div class="text-xs text-slate-400 font-medium">Capacidad de Ingesta</div>
+          <div class="text-2xl font-bold text-sky-400 font-mono mt-1">10,000 QPS</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">5–10 Shards Kinesis Provisionados</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
+          <div class="text-xs text-slate-400 font-medium">Latencia P99 de Streaming</div>
+          <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">&lt; 45 ms</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Procesamiento Continuo Pipelined</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
+          <div class="text-xs text-slate-400 font-medium">Garantía Transaccional</div>
+          <div class="text-2xl font-bold text-amber-400 font-mono mt-1">Exactly-Once</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Two-Phase Commit Parquet S3 Sink</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
+          <div class="text-xs text-slate-400 font-medium">Desacoplamiento de Alertas</div>
+          <div class="text-2xl font-bold text-indigo-400 font-mono mt-1">Zero Lock</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">SQS FIFO + DynamoDB TTL (15m)</div>
+        </div>
+      </div>
+
+      <!-- Architecture 4-Tier Flow Cards -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+
+        <!-- Tier 1 -->
+        <div class="tier-card bg-slate-900/80 border border-slate-800 rounded-xl p-5 flex flex-col justify-between transition-all">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-[10px] font-bold font-mono tracking-widest text-sky-400 uppercase bg-sky-950/70 border border-sky-800/80 px-2 py-0.5 rounded">
+                Tier 01 • Ingest
+              </span>
+              <span class="text-xs text-slate-400 font-mono">AWS Kinesis</span>
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Ingestion &amp; Sharding</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+              Generador multi-hilo en Python produce telemetría empaquetada mediante lotes KPL (<code class="text-sky-300">PutRecords</code>). La clave de partición vinculada a <code class="text-sky-300">sensor_id</code> garantiza orden cronológico estricto por activo.
+            </p>
+            <ul class="text-xs space-y-2 text-slate-300 font-mono">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                <span>Batched PutRecords (1 MB máx)</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                <span>Jitter Temporal Realista (±2.5s)</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                <span>Hash Slot Key Routing</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+            Stream: <span class="text-slate-300 font-mono">odysseus-sensor-stream</span>
+          </div>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="tier-card bg-slate-900/80 border border-slate-800 rounded-xl p-5 flex flex-col justify-between transition-all">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-[10px] font-bold font-mono tracking-widest text-emerald-400 uppercase bg-emerald-950/70 border border-emerald-800/80 px-2 py-0.5 rounded">
+                Tier 02 • Core
+              </span>
+              <span class="text-xs text-slate-400 font-mono">Flink Java 17</span>
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Stateful CEP Engine</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+              Ejecución nativa sobre Flink con checkpoints incrementales RocksDB, ventanas deslizantes pre-agregadas en memoria, y autómata de estados finitos (NFA) para alertas compuestas.
+            </p>
+            <ul class="text-xs space-y-2 text-slate-300 font-mono">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>withIdleness(30s) Guard</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>Ventana 1 min (slide 10s)</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>CEP: Spike ➔ Vibration (30s)</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>Side-Output DLQ para Malformed</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+            Estado: <span class="text-slate-300 font-mono">RocksDB + Checkpoint (30s)</span>
+          </div>
+        </div>
+
+        <!-- Tier 3 -->
+        <div class="tier-card bg-slate-900/80 border border-slate-800 rounded-xl p-5 flex flex-col justify-between transition-all">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-[10px] font-bold font-mono tracking-widest text-amber-400 uppercase bg-amber-950/70 border border-amber-800/80 px-2 py-0.5 rounded">
+                Tier 03 • Storage
+              </span>
+              <span class="text-xs text-slate-400 font-mono">S3 + Athena</span>
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Zero-Crawler Analytics</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+              El <code class="text-amber-300">FileSink</code> transaccional vuelca bloques Parquet (128 MB o 30 min) a S3. La **Partition Projection** de AWS Glue habilita consultas Athena instantáneas sin desfase de crawlers.
+            </p>
+            <ul class="text-xs space-y-2 text-slate-300 font-mono">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Rolling: 128 MB / 30 minutos</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Exact-Once S3 Two-Phase Commit</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Glue Partition Projection Activa</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Abort Multipart Incomplete (1d)</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+            Ruta: <span class="text-slate-300 font-mono">s3://.../telemetry/year=/...</span>
+          </div>
+        </div>
+
+        <!-- Tier 4 -->
+        <div class="tier-card bg-slate-900/80 border border-slate-800 rounded-xl p-5 flex flex-col justify-between transition-all">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-[10px] font-bold font-mono tracking-widest text-indigo-400 uppercase bg-indigo-950/70 border border-indigo-800/80 px-2 py-0.5 rounded">
+                Tier 04 • Alerts
+              </span>
+              <span class="text-xs text-slate-400 font-mono">SQS ➔ Lambda ➔ SNS</span>
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Idempotent Notifications</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+              Emisión no bloqueante hacia SQS FIFO que elimina backpressure en el stream. Lambda deduplica atómicamente mediante TTL de 15 min en DynamoDB antes de disparar SNS.
+            </p>
+            <ul class="text-xs space-y-2 text-slate-300 font-mono">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                <span>Token SHA-256 de Idempotencia</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                <span>DynamoDB Conditional Put (15m)</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                <span>BatchSize: 25 | Ventana: 5s</span>
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                <span>Cero Tormentas de Alertas en Replay</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+            Buffer: <span class="text-slate-300 font-mono">odysseus-alerts.fifo</span>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- TAB 3: LIVE SIMULATOR -->
+    <section id="tab-simulator" class="hidden space-y-6">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+          <span>⚡ Simulador Interactivo de Estados Flink CEP</span>
+        </h3>
+        <p class="text-xs text-slate-400 mb-6">
+          Ejecute escenarios simulados para inspeccionar la máquina de estados en tiempo real, el autómata NFA, y el búfer de deduplicación de alertas.
+        </p>
+
+        <!-- Control Buttons -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <button onclick="simulateEvent('normal')" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-left transition-all">
+            <div class="text-xs font-bold text-sky-400">Escenario 1: Telemetría Nominal</div>
+            <div class="text-[11px] text-slate-400 mt-1">T = 62.5°C, V_RMS = 1.8 mm/s. Régimen normal.</div>
+          </button>
+          <button onclick="simulateEvent('spike_only')" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-left transition-all">
+            <div class="text-xs font-bold text-amber-400">Escenario 2: Pico Térmico Aislado</div>
+            <div class="text-[11px] text-slate-400 mt-1">T = 89.2°C (&gt; 85°C), sin anomalía cinética.</div>
+          </button>
+          <button onclick="simulateEvent('catastrophe')" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-red-900/60 rounded-lg text-left transition-all shadow-lg shadow-red-950/40">
+            <div class="text-xs font-bold text-red-400">Escenario 3: Falla Compuesta Catastrófica</div>
+            <div class="text-[11px] text-slate-400 mt-1">T = 91.0°C ➔ Vibración = 5.8 mm/s en 12 segundos.</div>
+          </button>
+        </div>
+
+        <!-- Simulation Output Dashboard -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800 font-mono text-xs">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold">1. Payload Recibido (SensorEvent)</div>
+            <div id="sim-payload" class="text-slate-300 whitespace-pre leading-relaxed overflow-x-auto">
+// Seleccione uno de los 3 escenarios
+// superiores para inyectar telemetría.
+            </div>
+          </div>
+
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800 font-mono text-xs">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold">2. Estado Interno del Autómata CEP (NFA)</div>
+            <div id="sim-cep-state" class="text-slate-300 whitespace-pre leading-relaxed">
+NFA Status: IDLE
+State: State_0 (Esperando Spike Térmico)
+Partial Matches: 0
+Active Window: Ninguna
+            </div>
+          </div>
+
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800 font-mono text-xs">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-bold">3. Reacción en Sinks &amp; Notificación</div>
+            <div id="sim-sink-action" class="text-slate-300 whitespace-pre leading-relaxed">
+S3 FileSink: Acumulando en bloque Parquet...
+SQS FIFO: Sin evento emitido.
+DynamoDB Token: N/A
+SNS Notification: Inactivo.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DATA CONTRACTS & PREDICATES -->
+    <section id="tab-specs" class="hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Telemetry Ingestion Contract -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider font-mono">1. SensorEvent.java (Ingestion Contract)</h3>
+            <span class="text-xs text-sky-400 font-mono">JSON / POJO</span>
+          </div>
+          <pre class="bg-slate-950 p-4 rounded-lg text-xs text-slate-300 font-mono overflow-x-auto border border-slate-800 leading-relaxed"><code>{
+  "sensor_id": "TURBINE-001",
+  "device_type": "KINETIC_TURBINE",
+  "event_timestamp": 1794396000000,
+  "temperature_celsius": 88.4,
+  "vibration_rms": 5.12,
+  "pressure_kpa": 101.3,
+  "power_draw_kw": 45.2,
+  "battery_voltage": 24.1,
+  "status_code": "OK"
+}</code></pre>
+        </div>
+
+        <!-- Curated Parquet Schema -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider font-mono">2. Curated Parquet Schema (S3 Storage)</h3>
+            <span class="text-xs text-emerald-400 font-mono">Apache Parquet</span>
+          </div>
+          <pre class="bg-slate-950 p-4 rounded-lg text-xs text-slate-300 font-mono overflow-x-auto border border-slate-800 leading-relaxed"><code>sensor_id:         STRING
+window_start:      TIMESTAMP_MILLIS
+window_end:        TIMESTAMP_MILLIS
+avg_temperature:   DOUBLE
+max_temperature:   DOUBLE
+avg_vibration:     DOUBLE
+max_vibration:     DOUBLE
+sample_count:      BIGINT
+anomaly_flag:      BOOLEAN
+-- Partition Keys (Projection):
+year:              STRING (ej. "2026")
+month:             STRING (ej. "11")
+day:               STRING (ej. "11")
+hour:              STRING (ej. "07")</code></pre>
+        </div>
+
+      </div>
+
+      <!-- Mathematical Formulation of CEP -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider font-mono mb-4">
+          3. Formulación Matemática del Autómata de Estados CEP
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
+            <div class="text-sky-400 font-bold mb-1">Predicado A: Spike Térmico</div>
+            <div class="text-slate-300">T_t &gt; 85.0 °C  ∨  (ΔT / Δt) &gt; 5.0 °C/sec</div>
+            <div class="text-[11px] text-slate-500 mt-2">Detonado por fricción mecánica o falla en refrigeración.</div>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
+            <div class="text-amber-400 font-bold mb-1">Predicado B: Anomalía Cinética</div>
+            <div class="text-slate-300">V_RMS &gt; 4.5 mm/s  ∨  z-score &gt; 3.0</div>
+            <div class="text-[11px] text-slate-500 mt-2">Detonado por desbalance en eje de rotor o desgaste en rodamientos.</div>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
+            <div class="text-red-400 font-bold mb-1">Restricción Temporal Compuesta</div>
+            <div class="text-slate-300">A followedBy B  within(Time.seconds(30))</div>
+            <div class="text-[11px] text-slate-500 mt-2">Emite token SHA-256 determinista a SQS FIFO.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RESILIENCE & CHECKPOINTS -->
+    <section id="tab-slas" class="hidden space-y-6">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-base font-bold text-white mb-4">Estrategia de Resiliencia, SLAs y Evolución de Savepoints</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300 font-mono">
+            <thead class="bg-slate-950 border-b border-slate-800 text-slate-400">
+              <tr>
+                <th class="p-3">Componente / Mecanismo</th>
+                <th class="p-3">Parámetro de Configuración</th>
+                <th class="p-3">Modo de Falla Prevenido</th>
+                <th class="p-3">Verificación Operativa</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+              <tr>
+                <td class="p-3 font-semibold text-white">RocksDB Incremental Checkpoint</td>
+                <td class="p-3 text-sky-400">state.backend.incremental: true</td>
+                <td class="p-3">Saturación de disco SST; timeouts de checkpoint en alto IO</td>
+                <td class="p-3 text-slate-400">Flink UI Checkpoints Tab</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">Keyed State TTL Eviction</td>
+                <td class="p-3 text-emerald-400">StateTtlConfig.newBuilder(1h).cleanupFullSnapshot()</td>
+                <td class="p-3">Fuga acumulativa de memoria por sensores desmantelados</td>
+                <td class="p-3 text-slate-400">Monitor de tamaño SST RocksDB</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">Kinesis Shard Idleness</td>
+                <td class="p-3 text-amber-400">WatermarkStrategy.withIdleness(Duration.ofSeconds(30))</td>
+                <td class="p-3">Congelamiento de marcas de agua ante shards silenciosos</td>
+                <td class="p-3 text-slate-400">Métrica Current Input Watermark</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">Operator UIDs Estables</td>
+                <td class="p-3 text-indigo-400">.uid("sensor-window-aggregator")</td>
+                <td class="p-3">StateMigrationException al desplegar nueva versión del JAR</td>
+                <td class="p-3 text-slate-400">flink run -s savepoint-dir job.jar</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">S3 Multi-Part Abort Policy</td>
+                <td class="p-3 text-rose-400">AbortIncompleteMultipartUpload: 1 day</td>
+                <td class="p-3">Archivos huérfanos acumulando costos fantasmas en S3</td>
+                <td class="p-3 text-slate-400">aws s3api list-multipart-uploads</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer Section -->
+  <footer class="max-w-7xl mx-auto mt-12 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+      <span>Proyecto Odysseus • Diseñado con Elephant-Goldfish Model (EGM)</span>
+    </div>
+    <div class="font-mono text-slate-400">
+      Lead Architect: <span class="text-slate-200">Guillén Concepción</span> • Senior Data Scientist &amp; MLOps Engineer
+    </div>
+  </footer>
+
+  <script>
+    // Tab Switching
+    function switchTab(tabId) {
+      const tabs = ['diagram', 'tiers', 'simulator', 'specs', 'slas'];
+      tabs.forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        const btn = document.getElementById('tab-btn-' + t);
+        if (t === tabId) {
+          el.classList.remove('hidden');
+          btn.className = 'px-4 py-2 text-xs font-bold rounded-lg bg-sky-600 text-white transition-all shadow-lg shadow-sky-600/30 flex items-center gap-1.5';
+        } else {
+          el.classList.add('hidden');
+          btn.className = 'px-4 py-2 text-xs font-bold rounded-lg bg-slate-800/90 text-slate-300 hover:bg-slate-700 transition-all border border-slate-700 flex items-center gap-1.5';
+        }
+      });
+    }
+
+    // Path Filtering
+    function filterPath(pathType) {
+      const allButtons = ['all', 'analytics', 'alerts', 'dlq'];
+      allButtons.forEach(b => {
+        const btn = document.getElementById('filter-' + b);
+        if (b === pathType) {
+          btn.className = 'px-2.5 py-1 rounded text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700';
+        }
+      });
+
+      const elements = document.querySelectorAll('.path-element');
+      elements.forEach(el => {
+        if (pathType === 'all') {
+          el.style.opacity = '1';
+          el.style.filter = 'none';
+        } else if (el.classList.contains('path-' + pathType)) {
+          el.style.opacity = '1';
+          el.style.filter = 'none';
+        } else {
+          el.style.opacity = '0.15';
+          el.style.filter = 'grayscale(100%)';
+        }
+      });
+    }
+
+    // Node Metadata Catalog
+    const nodeDetails = {
+      generator: {
+        badge: "TIER 1 • INGESTION GENERATOR",
+        title: "Industrial IoT Telemetry Fleet (Python Producer)",
+        source: "experiments/.../generator/generator.py",
+        desc: "Generador multi-hilo de alta concurrencia que sintetiza 1,000–5,000 registros/segundo utilizando la API PutRecords de Kinesis. Simula dinámicas térmicas y vibratorias con ruido gaussiano e inyecta jitter de red (±2.5s) para forzar evaluación por Event-Time.",
+        guarantee: "Garantiza orden secuencial por activo emitiendo cada sensor_id en su respectivo shard sin requerir un broker central pesado.",
+        formula: "EventTimestamp = SystemTimeMillis() + Gauss(0, 400ms)"
+      },
+      kinesis: {
+        badge: "TIER 1 • MANAGED INGESTION STREAM",
+        title: "AWS Kinesis Data Streams",
+        source: "terraform/kinesis.tf (aws_kinesis_stream)",
+        desc: "Búfer persistente de ingesta particionado en shards provisionados (2–10 shards). Cada shard soporta hasta 1 MB/s o 1,000 escrituras/s. La retención de 24 horas permite reprocesamiento completo en frío o replay de estado.",
+        guarantee: "Evita contención en escrituras mediante Hash Slot Key Routing asegurando que cada sensor_id se procese en orden estricto dentro de su shard.",
+        formula: "Throughput = N_shards × 1MB/s (Ingress) / 2MB/s (Egress)"
+      },
+      parser: {
+        badge: "TIER 2 • CORE STREAM ENGINE",
+        title: "JSON Deserializer & POJO Parser",
+        source: "com.odysseus.streaming.StreamingJob (ProcessFunction)",
+        desc: "Transformador de flujo que convierte cadenas JSON en POJOs fuertemente tipados SensorEvent. Detecta payloads corruptos o incompletos y los desvía hacia el Side-Output OutputTag<String>.",
+        guarantee: "Protege el pipeline contra fallos fatales por 'Poison Pills'. Registros corruptos se aíslan sin detener los operadores principales de la topología.",
+        formula: "Routing: Valid -> KeyedStream | Malformed -> SideOutput(MALFORMED_TAG)"
+      },
+      watermark: {
+        badge: "TIER 2 • EVENT-TIME WATERMARKING",
+        title: "Watermark Strategy & Idleness Detection",
+        source: "WatermarkStrategy.forBoundedOutOfOrderness",
+        desc: "Asigna marcas de agua basadas en el event_timestamp embebido en cada registro tolerando hasta 5 segundos de retraso por congestión de red (BoundedOutOfOrderness). Incluye guardián de idleness de 30 segundos.",
+        guarantee: "withIdleness(30s) previene el congelamiento global de marcas de agua y de las ventanas temporales si un shard de Kinesis entra en estado inactivo.",
+        formula: "Watermark(t) = max(event_timestamp) - 5000ms"
+      },
+      windows: {
+        badge: "TIER 2 • SLIDING WINDOW ANALYTICS",
+        title: "Sliding Window Aggregator (Mean/Max/RMS)",
+        source: "com.odysseus.streaming.operators.WindowAggregators",
+        desc: "Ventana deslizante de 1 minuto que avanza cada 10 segundos. Ejecuta agregación incremental en memoria mediante SensorAccumulator evitando almacenar listas crudas en memoria heap del TaskManager.",
+        guarantee: "Calcula métricas analíticas continuas respaldadas por el RocksDB StateBackend con checkpoints incrementales cada 30 segundos hacia S3.",
+        formula: "Window(Size=60s, Slide=10s) -> AggregatedSensorMetric"
+      },
+      cep: {
+        badge: "TIER 2 • CEP PATTERN MATCHING",
+        title: "Complex Event Processing Engine (NFA)",
+        source: "com.odysseus.streaming.cep.AnomalyPatterns",
+        desc: "Autómata Finito No Determinista que evalúa secuencias de falla compuesta: un pico térmico (> 85°C) seguido por una anomalía de vibración cinética (> 4.5 mm/s) dentro de un margen estricto de 30 segundos.",
+        guarantee: "Diferencia fallas catastróficas reales de variaciones térmicas aisladas. Genera un token SHA-256 único para cada coincidencia.",
+        formula: "Pattern: begin(Thermal > 85°C).followedBy(Vib > 4.5).within(30s)"
+      },
+      s3: {
+        badge: "TIER 3 • EXACTLY-ONCE STORAGE",
+        title: "Amazon S3 Transactional Storage (FileSink)",
+        source: "terraform/storage_catalog.tf (aws_s3_bucket)",
+        desc: "Sink transaccional de dos fases que escribe archivos en formato columnar Parquet comprimido con Snappy. Cierra bloques al alcanzar 128 MB o 30 minutos de inactividad garantizando entrega exactamente-una.",
+        guarantee: "Compromiso transaccional coordinado con los checkpoints de Flink. Sin registros duplicados ni particiones corruptas.",
+        formula: "s3://odysseus-telemetry-curated/telemetry/year=YYYY/month=MM/..."
+      },
+      athena: {
+        badge: "TIER 3 • ZERO-CRAWLER CATALOG",
+        title: "AWS Glue & Amazon Athena SQL Engine",
+        source: "terraform/storage_catalog.tf (Partition Projection)",
+        desc: "Catálogo de datos con Partition Projection activada en el AWS Glue Catalog. Calcula las particiones virtualmente en tiempo de consulta eliminando por completo la latencia y costos de crawlers periódicos.",
+        guarantee: "Consultas analíticas serverless con poda instantánea de particiones horarias en milisegundos.",
+        formula: "SELECT * FROM curated_sensor_metrics WHERE year='2026' AND anomaly_flag=true"
+      },
+      sqs: {
+        badge: "TIER 4 • ASYNC ALERT BUFFER",
+        title: "Amazon SQS FIFO Queue (Anti-Backpressure)",
+        source: "terraform/alerting.tf (aws_sqs_queue.alert_queue)",
+        desc: "Búfer de cola FIFO desacoplado. Flink emite alertas de incidentes de forma asíncrona hacia SQS, utilizando sensor_id como MessageGroupId y el token SHA-256 como MessageDeduplicationId.",
+        guarantee: "Elimina bloqueos síncronos HTTP dentro de Flink, protegiendo los TaskManagers contra caídas de servicios externos o picos de latencia.",
+        formula: "FIFO Parameters: MessageGroupId=sensor_id | DeduplicationId=SHA256"
+      },
+      lambda: {
+        badge: "TIER 4 • IDEMPOTENT WORKER",
+        title: "AWS Lambda Alerter Gatekeeper",
+        source: "lambda-alerter/handler.py",
+        desc: "Función serverless invocada en lotes de hasta 25 mensajes por ventana de 5 segundos. Actúa como barrera atómica consultando DynamoDB antes de emitir cualquier alerta a SNS.",
+        guarantee: "Garantiza que ante la recuperación de un checkpoint de Flink y re-emisión de alertas, ninguna notificación duplicada llegue a los operadores.",
+        formula: "BatchSize: 25 | MaximumBatchingWindow: 5s | Atomic Check"
+      },
+      dynamodb: {
+        badge: "TIER 4 • DEDUPLICATION STORE",
+        title: "Amazon DynamoDB (Atomic TTL Barrier)",
+        source: "terraform/alerting.tf (odysseus_alert_idempotency)",
+        desc: "Tabla NoSQL de clave única que almacena tokens SHA-256 con condición attribute_not_exists. Posee Time-To-Live (TTL) automático de 15 minutos que purga registros sin costo de computación.",
+        guarantee: "Absorbe tormentas de alertas y repeticiones producidas durante el failover o reanudación de checkpoints del clúster de streaming.",
+        formula: "PutItem(idempotency_key, TTL = now + 900s) -> ConditionalCheck"
+      },
+      sns: {
+        badge: "TIER 4 • INCIDENT BROADCAST",
+        title: "Amazon SNS Incident Broadcast Topic",
+        source: "terraform/alerting.tf (aws_sns_topic)",
+        desc: "Tópico de mensajería multi-canal que despacha alertas de severidad crítica hacia ingenieros de guardia, canales de Slack, PagerDuty y correos electrónicos.",
+        guarantee: "Entrega sub-segundo de alertas validadas con resumen diagnóstico de temperatura, vibración y tiempo transcurrido de la falla.",
+        formula: "Dispatch: Subject='🚨 [CRITICAL] Odysseus IoT Incident: {sensor_id}'"
+      },
+      dlq: {
+        badge: "RESILIENCE • DEAD-LETTER QUEUE",
+        title: "S3 Poison Pill & Corrupted Telemetry DLQ",
+        source: "StreamingJob.MALFORMED_TAG (OutputTag)",
+        desc: "Almacén de aislamiento para registros que no cumplen el esquema JSON, contienen campos nulos críticos o marcas de tiempo incompatibles. Vuelca bloques horarios a S3 para auditoría forense.",
+        guarantee: "Cero impacto en el flujo principal de telemetría y trazabilidad completa de sensores con firmware defectuoso.",
+        formula: "s3://odysseus-telemetry-dlq/malformed/year=YYYY/..."
+      }
+    };
+
+    function selectNode(nodeKey) {
+      // Remove active classes
+      document.querySelectorAll('.node-interactive').forEach(el => el.classList.remove('node-active'));
+      
+      const nodeEl = document.getElementById('svg-node-' + nodeKey);
+      if (nodeEl) nodeEl.classList.add('node-active');
+
+      const data = nodeDetails[nodeKey];
+      if (!data) return;
+
+      document.getElementById('inspect-badge').textContent = data.badge;
+      document.getElementById('inspect-title').textContent = data.title;
+      document.getElementById('inspect-source').textContent = data.source;
+      document.getElementById('inspect-desc').innerHTML = data.desc;
+      document.getElementById('inspect-guarantee').textContent = data.guarantee;
+      document.getElementById('inspect-formula').textContent = data.formula;
+
+      // Scroll smoothly to inspector on mobile
+      if (window.innerWidth < 768) {
+        document.getElementById('node-inspector').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    // Live Simulator Logic
+    function simulateEvent(type) {
+      const pPayload = document.getElementById('sim-payload');
+      const pCep = document.getElementById('sim-cep-state');
+      const pSink = document.getElementById('sim-sink-action');
+
+      if (type === 'normal') {
+        pPayload.textContent = JSON.stringify({
+          sensor_id: "TURBINE-001",
+          device_type: "KINETIC_TURBINE",
+          event_timestamp: Date.now(),
+          temperature_celsius: 62.4,
+          vibration_rms: 1.82,
+          pressure_kpa: 101.3,
+          power_draw_kw: 42.1,
+          battery_voltage: 24.1,
+          status_code: "OK"
+        }, null, 2);
+
+        pCep.textContent = `NFA Status: EVALUATING
+Step: State_0 (Esperando Spike Térmico)
+Condition (T > 85.0): FALSE (62.4°C)
+Match Action: NONE (Reenviado a Sliding Window)
+Watermark Lag: 1.2s
+In-Flight Patterns: 0`;
+
+        pSink.textContent = `S3 FileSink: Acumulado en bloque de 128 MB.
+Athena Projection: dt=2026-11-11/hour=08/
+SQS FIFO: Suprimido (Sin anomalía).
+DynamoDB: Sin token emitido.
+SNS: Inactivo.`;
+      } else if (type === 'spike_only') {
+        pPayload.textContent = JSON.stringify({
+          sensor_id: "TURBINE-001",
+          device_type: "KINETIC_TURBINE",
+          event_timestamp: Date.now(),
+          temperature_celsius: 89.2,
+          vibration_rms: 2.10,
+          pressure_kpa: 102.5,
+          power_draw_kw: 44.5,
+          battery_voltage: 24.0,
+          status_code: "THERMAL_WARNING"
+        }, null, 2);
+
+        pCep.textContent = `NFA Status: PARTIAL_MATCH
+Step: State_1 (Spike Térmico Confirmado: 89.2°C)
+Esperando: State_2 (Vibración > 4.5 mm/s en ≤ 30s)
+Temporizador: Cuenta regresiva de 30.0s iniciada
+Clave Activa: TURBINE-001`;
+
+        pSink.textContent = `S3 FileSink: Marcado como anomaly_flag=FALSE.
+SQS FIFO: Suprimido (Condición parcial incompleta).
+DynamoDB: Sin token escrito.
+SNS: Inactivo.`;
+      } else if (type === 'catastrophe') {
+        const now = Date.now();
+        const idempotencyKey = "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069";
+        pPayload.textContent = JSON.stringify({
+          sensor_id: "TURBINE-001",
+          device_type: "KINETIC_TURBINE",
+          event_timestamp: now,
+          temperature_celsius: 91.0,
+          vibration_rms: 5.82,
+          pressure_kpa: 104.2,
+          power_draw_kw: 54.3,
+          battery_voltage: 23.8,
+          status_code: "CATASTROPHIC_VIBRATION"
+        }, null, 2);
+
+        pCep.textContent = `NFA Status: MATCH_COMPLETED! 🔥
+Step: State_2 COMPLETADO (Vibración = 5.82 mm/s)
+Tiempo Transcurrido: 12.4s (≤ 30s umbral temporal)
+Patrón: THERMAL_KINETIC_CATASTROPHE
+Acción: Despachando AlertEvent a SqsAlertSink...`;
+
+        pSink.textContent = `SQS FIFO: ¡MENSAJE ENVIADO!
+MessageGroupId: TURBINE-001
+DeduplicationId: ${idempotencyKey.slice(0, 16)}...
+Lambda: Ejecución en lote (BatchSize: 1).
+DynamoDB: Conditional PutItem OK (TTL 15m).
+SNS Incident Topic: 🚨 ALERTA DISPARADA a Guardia!`;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # LocalStack: Emulates AWS Kinesis, S3, SQS, SNS, and DynamoDB locally
+  # ---------------------------------------------------------------------------
+  localstack:
+    container_name: odysseus-localstack
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=kinesis,s3,sqs,sns,dynamodb,glue
+      - AWS_DEFAULT_REGION=us-east-1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DEBUG=1
+      - PERSISTENCE=0
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - odysseus-net
+
+  # ---------------------------------------------------------------------------
+  # Apache Flink: JobManager (Coordinator & Web UI)
+  # ---------------------------------------------------------------------------
+  flink-jobmanager:
+    container_name: odysseus-flink-jobmanager
+    image: flink:1.18.1-java17
+    ports:
+      - "8081:8081"            # Flink Dashboard Web UI
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        parallelism.default: 2
+        state.backend: rocksdb
+        state.checkpoints.dir: s3://odysseus-telemetry-checkpoints/flink/checkpoints
+        state.savepoints.dir: s3://odysseus-telemetry-checkpoints/flink/savepoints
+        s3.endpoint: http://localstack:4566
+        s3.path.style.access: true
+        s3.access-key: test
+        s3.secret-key: test
+    volumes:
+      - ./flink-processor/target:/opt/flink/usrlib
+    networks:
+      - odysseus-net
+    depends_on:
+      - localstack
+
+  # ---------------------------------------------------------------------------
+  # Apache Flink: TaskManager (Worker execution units)
+  # ---------------------------------------------------------------------------
+  flink-taskmanager:
+    container_name: odysseus-flink-taskmanager
+    image: flink:1.18.1-java17
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 2
+        state.backend: rocksdb
+        s3.endpoint: http://localstack:4566
+        s3.path.style.access: true
+        s3.access-key: test
+        s3.secret-key: test
+    networks:
+      - odysseus-net
+    depends_on:
+      - flink-jobmanager
+
+networks:
+  odysseus-net:
+    driver: bridge
+
+volumes:
+  localstack-data:
+

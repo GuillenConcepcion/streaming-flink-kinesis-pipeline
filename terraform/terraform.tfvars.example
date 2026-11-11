@@ -1,0 +1,10 @@
+# =============================================================================
+# Odysseus Streaming Pipeline - Terraform Variables Configuration Example
+# =============================================================================
+
+aws_region               = "us-east-1"
+environment              = "production"
+project_name             = "odysseus-streaming"
+kinesis_shard_count      = 4
+alert_notification_email = "guillenconcepcion@gmail.com"
+
