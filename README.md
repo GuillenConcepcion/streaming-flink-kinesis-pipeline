@@ -1,17 +1,28 @@
+<p align="center">
+  <img src="docs/images/hero_streaming_pipeline.png" alt="Odysseus Real-Time Streaming Data Pipeline: Apache Flink & AWS Kinesis" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+</p>
+
 # 🌊 Odysseus Real-Time Streaming Data Pipeline: Apache Flink & AWS Kinesis
 
-[![CI / Enterprise Quality Gates](https://img.shields.io/badge/CI%2FCD-Quality%20Gates%20Passing-059669?style=flat-square&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Architecture: EGM Validated](https://img.shields.io/badge/Architecture-EGM%20Validated-0284c7?style=flat-square)](docs/designs/flink_kinesis_streaming.md)
-[![Engine: Apache Flink 1.18 (Java 17)](https://img.shields.io/badge/Flink-1.18%20(Java%2017)-e11d48?style=flat-square)](https://flink.apache.org/)
-[![Storage: Amazon S3 & Glue Partition Projection](https://img.shields.io/badge/Catalog-Glue%20Projection-059669?style=flat-square)](https://aws.amazon.com/glue/)
-[![Alerting: SQS FIFO + DynamoDB TTL](https://img.shields.io/badge/Alerting-SQS%20FIFO%20Idempotent-d97706?style=flat-square)](https://aws.amazon.com/sqs/)
-[![Observability: CloudWatch & Prometheus](https://img.shields.io/badge/Observability-CloudWatch%20%2B%20Prometheus-818cf8?style=flat-square)](terraform/observability.tf)
-[![Code Style: Ruff](https://img.shields.io/badge/Code%20Style-Ruff-black?style=flat-square)](https://github.com/astral-sh/ruff)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-64748b?style=flat-square)](LICENSE)
+<p align="center">
+  <a href="https://guillenconcepcion.github.io/streaming-flink-kinesis-pipeline/"><img src="https://img.shields.io/badge/Live%20Architecture-Interactive%20Web%20Dashboard-0284c7?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Interactive Architecture Dashboard" /></a>
+  <a href="docs/designs/flink_kinesis_streaming.md"><img src="https://img.shields.io/badge/EGM%20Spec-Canonical%20Design%20Doc-059669?style=for-the-badge&logo=markdown&logoColor=white" alt="Canonical Technical Spec" /></a>
+</p>
+
+<p align="center">
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/CI%2FCD-Quality%20Gates%20Passing-059669?style=flat-square&logo=githubactions&logoColor=white" alt="CI/CD Quality Gates" /></a>
+  <a href="https://flink.apache.org/"><img src="https://img.shields.io/badge/Engine-Flink%201.18%20(Java%2017)-e11d48?style=flat-square&logo=apacheflink&logoColor=white" alt="Apache Flink 1.18" /></a>
+  <a href="https://aws.amazon.com/kinesis/"><img src="https://img.shields.io/badge/Ingestion-AWS%20Kinesis-ff9900?style=flat-square&logo=amazonaws&logoColor=white" alt="AWS Kinesis" /></a>
+  <a href="https://aws.amazon.com/glue/"><img src="https://img.shields.io/badge/Catalog-Glue%20Projection-059669?style=flat-square" alt="Glue Partition Projection" /></a>
+  <a href="https://aws.amazon.com/sqs/"><img src="https://img.shields.io/badge/Alerting-SQS%20FIFO%20Idempotent-d97706?style=flat-square" alt="SQS FIFO" /></a>
+  <a href="terraform/observability.tf"><img src="https://img.shields.io/badge/Observability-CloudWatch%20%2B%20Prometheus-818cf8?style=flat-square" alt="CloudWatch" /></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/Code%20Style-Ruff-black?style=flat-square" alt="Ruff" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License" /></a>
+</p>
 
 **Proyecto:** Odysseus AI Platform & Predictive MLOps Framework  
 **Lead Architect:** [Guillen Concepcion](https://www.linkedin.com/in/guillen-concepcion-25266b127) *(Senior Data Scientist & MLOps Engineer)*  
-**Specification & Design:** [docs/designs/flink_kinesis_streaming.md](docs/designs/flink_kinesis_streaming.md) | [Interactive Architecture Visualizer (HTML)](docs/designs/technical_architecture_system_design.html)
+**Specification & Design:** [docs/designs/flink_kinesis_streaming.md](docs/designs/flink_kinesis_streaming.md) | [Interactive Architecture Visualizer (HTML)](https://guillenconcepcion.github.io/streaming-flink-kinesis-pipeline/)
 
 ---
 
@@ -265,10 +276,25 @@ ORDER BY p95_temp DESC;
 
 ---
 
-## 👨‍💻 Author & Contact
+## 👨‍💻 Author & Lead Architect
 
-- **Lead Architect:** [Guillen Concepcion](https://www.linkedin.com/in/guillen-concepcion-25266b127) *(Senior Data Scientist & MLOps Engineer)*
-- **GitHub:** [https://github.com/GuillenConcepcion](https://github.com/GuillenConcepcion)
-- **LinkedIn:** [https://www.linkedin.com/in/guillen-concepcion-25266b127](https://www.linkedin.com/in/guillen-concepcion-25266b127)
-- **Email:** `guillenconcepcion@gmail.com`
+<table>
+  <tr>
+    <td width="130" align="center" valign="middle">
+      <img src="docs/images/guillen_logo.png" alt="Guillén Concepción" width="110" style="border-radius: 50%; border: 2px solid #0ea5e9;" />
+    </td>
+    <td>
+      <h3 style="margin-top: 0; margin-bottom: 6px;">Guillén Concepción</h3>
+      <p style="margin: 0; font-weight: 600; color: #0284c7;">Senior Data Scientist & MLOps Engineer</p>
+      <p style="margin-top: 6px; margin-bottom: 10px; font-size: 13px; color: #475569;">
+        Expert in designing, engineering, and deploying end-to-end Cloud-Native AI systems and resilient streaming architectures. Pragmatic and business-value driven, spanning research to audit-compliant production MLOps.
+      </p>
+      <div>
+        <a href="https://www.linkedin.com/in/guillen-concepcion-25266b127"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=flat-square&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
+        <a href="https://github.com/GuillenConcepcion"><img src="https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub" /></a>
+        <a href="mailto:guillenconcepcion@gmail.com"><img src="https://img.shields.io/badge/Email-D14836?style=flat-square&logo=gmail&logoColor=white" alt="Email" /></a>
+      </div>
+    </td>
+  </tr>
+</table>
 
