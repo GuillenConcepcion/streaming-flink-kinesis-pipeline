@@ -132,17 +132,30 @@ This token serves simultaneously as the Amazon SQS `MessageDeduplicationId` and 
 
 ```text
 experiments/streaming_flink_kinesis_pipeline/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                                  # Multi-stage CI/CD Quality Gates (Java, Python, Terraform)
+│       └── static.yml                              # Automated GitHub Pages Deployment Workflow
 ├── docs/
+│   ├── index.html                                  # Live Interactive Architecture Dashboard (GitHub Pages)
+│   ├── LINKEDIN_POST.md                            # Executive Thought Leadership Publication Post
+│   ├── images/
+│   │   ├── hero_streaming_pipeline.png             # 16:9 Branded Hero Banner with Typography
+│   │   └── guillen_logo.png                        # Author & Lead Architect Profile Avatar
 │   └── designs/
 │       ├── flink_kinesis_streaming.md              # Canonical EGM Technical Specification
-│       └── technical_architecture_system_design.html # Interactive Architecture Dashboard
-├── docker-compose.yml                              # LocalStack + Flink JobManager + TaskManager
+│       └── technical_architecture_system_design.html # Single-Page Interactive Visualizer
+├── docker-compose.yml                              # LocalStack (Kinesis, S3, SQS, DynamoDB) + Flink Cluster
 ├── Makefile                                        # Operational Workflow & Build Automation
+├── LICENSE                                         # MIT Open Source License
+├── notebooks/
+│   └── 01_streaming_analytics_demo.ipynb           # DuckDB & Athena Serverless Analytics Demo
 ├── scripts/
-│   ├── init_localstack.py                          # Cross-platform AWS bootstrap script
-│   └── init_localstack.sh                          # Bash AWS bootstrap script
+│   ├── init_localstack.py                          # Cross-platform AWS bootstrap script (Boto3)
+│   ├── init_localstack.sh                          # Bash AWS bootstrap script
+│   └── overlay_banner_title.py                     # Python Pillow typography compositor for banner
 ├── generator/                                      # Telemetry Ingestion Layer
-│   ├── generator.py                                # High-throughput synthetic IoT generator
+│   ├── generator.py                                # High-throughput synthetic IoT generator (1,000+ QPS)
 │   └── requirements.txt                            # boto3, numpy
 ├── flink-processor/                                # Stream Processing Engine (Java 17)
 │   ├── pom.xml                                     # Maven POM with Flink 1.18 & Shade fat JAR
@@ -162,13 +175,18 @@ experiments/streaming_flink_kinesis_pipeline/
 │       └── cep/AnomalyPatternsTest.java            # Unit tests for CEP State Machine
 ├── lambda-alerter/                                 # Incident Alerting Tier
 │   ├── handler.py                                  # Lambda handler with DynamoDB atomic TTL
-│   └── requirements.txt
+│   ├── requirements.txt                            # boto3
+│   ├── requirements-dev.txt                        # pytest, moto, ruff
+│   └── tests/
+│       └── test_handler.py                         # Unit tests verifying atomic deduplication barrier
 └── terraform/                                      # Production Cloud Infrastructure (IaC)
     ├── main.tf                                     # AWS Provider configuration
     ├── variables.tf                                # Configurable deployment parameters
+    ├── terraform.tfvars.example                    # Sample production deployment variables
     ├── kinesis.tf                                  # Ingestion Kinesis Stream
     ├── storage_catalog.tf                          # S3 + Glue Partition Projection + Athena
     ├── alerting.tf                                 # SQS FIFO + DynamoDB + SNS + Lambda
+    ├── observability.tf                            # CloudWatch Alarms (Lag, Shard, DLQ) & Dashboard
     └── outputs.tf                                  # Resource ARNs and endpoints
 ```
 
