@@ -1,0 +1,46 @@
+# =============================================================================
+# GitHub Pages - Automated Static Deployment Workflow
+# Deploys the interactive architecture dashboard to GitHub Pages
+# Target: https://guillenconcepcion.github.io/streaming-flink-kinesis-pipeline/
+# =============================================================================
+
+name: Deploy static content to Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Despliega la carpeta docs/ que contiene index.html
+          path: './docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        id: deployment
+        uses: actions/deploy-pages@v5
