@@ -287,3 +287,4 @@ $$P_{\text{collision}} \approx \frac{(10^9)^2}{2 \times 1.1579 \times 10^{77}} =
 13. **Vovk, V., Gammerman, A., & Shafer, G.** (2005). *Algorithmic Learning in a Random World*. Springer Science & Business Media. ISBN: 978-0-387-00152-4.
 14. **Romano, Y., Patterson, E., & Candès, E.** (2019). *Conformalized Quantile Regression*. **Advances in Neural Information Processing Systems (NeurIPS 2019)**, 32, 3543–3553.
 15. **Lundberg, S. M., & Lee, S.-I.** (2017). *A Unified Approach to Interpreting Model Predictions*. **Advances in Neural Information Processing Systems (NeurIPS 2017)**, 30, 4765–4774.
+

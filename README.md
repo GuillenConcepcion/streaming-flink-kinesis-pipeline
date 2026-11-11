@@ -107,64 +107,220 @@ Designed and verified under the **Elephant-Goldfish Model (EGM)**, this architec
 
 ---
 
-## 🔬 Mathematical Formulations, Stochastic Modeling & Statistical EDA
+---
+
+## 📊 Data Assets, Telemetry Schemas & Storage Architecture for Data Science
+
+Este pipeline fue concebido como una infraestructura de **Feature Store y Telemetría en Tiempo Real** para proyectos avanzados de **Data Science, Mantenimiento Predictivo (PdM) y MLOps**. 
+
+```
++----------------------------------------------------------------------------------------------------+
+|                                    DATA SCIENCE TELEMETRY LIFECYCLE                                |
+|                                                                                                    |
+|  [EDGE INGESTION]      [STREAM PROCESSING & CEP]       [COLUMNAR LAKEHOUSE]    [DATA SCIENCE / ML] |
+|   Kinesis Shards   -->    Apache Flink 1.18        -->    Amazon S3 Parquet  -->  Athena / DuckDB  |
+|  1,000 - 50k QPS          - 1-min Sliding Windows         - Snappy / ZSTD         - Feature Store  |
+|  JSON Payloads            - RocksDB Incremental State     - Partition Projection  - RUL Weibull    |
+|  (Raw Telemetry)          - Exactly-Once 2PC Commits      - year/month/day/hour   - Mahalanobis ML |
++----------------------------------------------------------------------------------------------------+
+```
+
+### 1. Jerarquía de Información y Esquemas de Datos
+
+El pipeline estructura la información en tres capas desacopladas con tipado estricto:
+
+#### A. Telemetría Cruda de Alta Frecuencia (`SensorEvent`)
+Captura lecturas electro-mecánicas instantáneas en el borde con semántica de **Event-Time**:
+
+| Variable | Tipo de Dato | Unidad / Rango | Descripción Física & Relevancia para Data Science |
+| :--- | :--- | :--- | :--- |
+| `sensor_id` | `VARCHAR(32)` | Ej. `TURBINE-001` | Identificador de activo (Clave de partición en Kinesis y agrupación en series temporales). |
+| `device_type` | `VARCHAR(32)` | Categórico | Tipología de maquinaria (`KINETIC_TURBINE`, `CENTRIFUGAL_PUMP`, `COMPRESSOR_STAGE`, `COOLING_TOWER`). |
+| `event_timestamp`| `BIGINT` | Epoch ms | **Event-Time**: Marca de tiempo del reloj físico del sensor (inmune a latencias de red). |
+| `temperature_celsius` | `DOUBLE` | 50.0 – 110.0 °C | Temperatura superficial en rodamientos/chumaceras. Indicador primario de fricción. |
+| `vibration_rms` | `DOUBLE` | 0.5 – 20.0 mm/s | Velocidad cuadrática media (RMS). Distribución asimétrica *heavy-tailed* (fatiga de material). |
+| `pressure_kpa` | `DOUBLE` | 95.0 – 125.0 kPa | Presión barométrica e hidráulica en la cámara de compresión/refrigeración. |
+| `power_draw_kw` | `DOUBLE` | 350.0 – 750.0 kW | Consumo de potencia eléctrica activa. Permite evaluar degradación de eficiencia. |
+| `battery_voltage` | `DOUBLE` | 2.5 – 3.6 V | Nivel de tensión del sensor IoT para control de calidad de datos e imputación. |
+| `status_code` | `VARCHAR(16)` | `OK`, `WARN`, `ERR` | Diagnóstico preliminar de firmware en el microcontrolador de campo. |
+
+---
+
+#### B. Métricas Agregadas en Ventana Deslizante (`AggregatedSensorMetric`)
+Generadas por operadores de ventana deslizante (**1 minuto de duración con deslizamiento cada 10 segundos**) y persistidas en **Apache Parquet**:
+
+| Variable Agregada | Tipo de Dato | Descripción Analítica para Modelos de ML |
+| :--- | :--- | :--- |
+| `window_start` / `window_end` | `BIGINT` | Marcas de tiempo de inicio y fin de ventana para indexación temporal regular sin vacíos. |
+| `avg_temperature` / `max_temperature` | `DOUBLE` | Inercia térmica continua frente a choques térmicos transitorios. |
+| `avg_vibration` / `max_vibration` | `DOUBLE` | Nivel base de vibración y factor de cresta ($\text{Crest Factor} = \frac{V_{\text{max}}}{V_{\text{avg}}}$). |
+| `avg_pressure` | `DOUBLE` | Nivel de contrapresión promedio del ciclo operativo. |
+| `avg_power` | `DOUBLE` | Consumo de potencia eléctrica integrado por ventana. |
+| `min_battery` | `DOUBLE` | Centinela para descarte de anomalías espurias provocadas por caída de voltaje. |
+| `sample_count` | `BIGINT` | Conteo muestral por ventana ($N \approx 60$ a 1 Hz) para ponderación estadística obligatoria. |
+| `anomaly_flag` | `BOOLEAN` | Etiqueta heurística binaria de falla (Ground Truth preliminar para modelos supervisados). |
+
+---
+
+#### C. Eventos de Incidentes Críticos de CEP (`AlertEvent`)
+Generados por el autómata finito de Flink ante la detección de secuencias de colapso termo-cinético:
+
+| Atributo | Tipo de Dato | Semántica Operativa |
+| :--- | :--- | :--- |
+| `alert_id` | `VARCHAR(64)` | UUID único del incidente. |
+| `sensor_id` | `VARCHAR(32)` | Activo físico afectado. |
+| `pattern_name` | `VARCHAR(64)` | Patrón de falla disparado (`CatastrophicThermalVibrationFailure`). |
+| `detected_timestamp` | `BIGINT` | Marca de tiempo del reconocimiento del patrón en Flink. |
+| `trigger_temperature` | `DOUBLE` | Temperatura exacta que cruzó el umbral crítico ($T > 85.0^\circ\text{C}$). |
+| `trigger_vibration` | `DOUBLE` | Vibración RMS que completó la secuencia de falla ($V_{\text{RMS}} > 6.0\text{ mm/s}$). |
+| `severity` | `VARCHAR(16)` | Clasificación de criticidad (`CRITICAL`, `FATAL`). |
+| `idempotency_token` | `CHAR(64)` | Hash SHA-256 determinista para supresión de tormentas de alertas en DynamoDB y SQS. |
+
+---
+
+### 2. Fuentes, Niveles de Almacenamiento (Storage Tiers) y Volumetría
+
+El almacenamiento sigue una arquitectura Lakehouse desacoplada por latencia y costo:
+
+```
++-------------------+---------------------------------------------+-----------------------+-----------------------------+
+| Nivel de Storage  | Recurso Cloud / Motor                       | Formato & Compresión  | Latencia de Acceso & Uso    |
++-------------------+---------------------------------------------+-----------------------+-----------------------------+
+| Streaming Ingress | AWS Kinesis Data Streams (2-10 Shards)      | JSON en tránsito      | Real-Time (< 50 ms)         |
+| Embedded State    | RocksDB Local SSD + S3 Checkpoints          | SST Files / Chandy-L. | Sub-milisegundo (Flink State)
+| Curated Lakehouse | Amazon S3 (s3://.../telemetry/year=.../)   | Apache Parquet Snappy | Sub-segundo (Athena/DuckDB) |
+| Dead-Letter Queue | Amazon S3 (s3://.../dlq/malformed/)         | JSON / GZIP           | Auditoría de Calidad        |
+| Operational Store | Amazon DynamoDB (odysseus_alert_idempotency)| Key-Value con TTL     | Sub-10 ms (Deduplicación)   |
+| Incident Queue    | Amazon SQS FIFO Queue                       | JSON asíncrono        | Búfer de Cero Contrapresión |
++-------------------+---------------------------------------------+-----------------------+-----------------------------+
+```
+
+#### Matriz de Volumetría y Rendimiento para Proyectos de Data Science:
+
+| Métrica de Escala | Régimen Base (Flota de Pruebas) | Régimen Enterprise (Producción Masiva) |
+| :--- | :--- | :--- |
+| **Activos Monitoreados** | 20 máquinas industriales | 1,000 a 5,000 máquinas |
+| **Throughput de Ingesta ($\lambda$)** | **1,000 eventos/s (QPS)** | **50,000 eventos/s (QPS)** |
+| **Rendimiento de Datos (Bandwidth)** | ~250 KB/s (2.0 Mbps) | ~12.5 MB/s (100 Mbps) |
+| **Volumen Crudo Diario (JSON)** | **21.6 GB / día** (~648 GB / mes) | **1.08 TB / día** (~32.4 TB / mes) |
+| **Volumen Curado Parquet en S3** | **3.2 a 4.5 GB / día** (~100–135 GB / mes) | **160 a 220 GB / día** (~5–6.6 TB / mes) |
+| **Registros de Ventana Agregada** | **172,800 filas / día** (~5 MB / día) | **8,640,000 filas / día** (~250 MB / día) |
+| **Ahorro por Compresión Columnar** | **78% a 82%** de reducción en S3 | **78% a 85%** de reducción en S3 |
+| **Optimización de Consultas** | **AWS Glue Partition Projection** (Cero latencia de Crawlers en Athena) | **Virtual Partition Pruning** |
+
+---
+
+### 3. Casos de Uso Concretos en Data Science y MLOps
+
+1. **Streaming Feature Store (Consistencia Online / Offline):**
+   * Las agregaciones deslizantes calculadas por Flink (`avg_temperature`, `max_vibration`, `avg_power`) actúan como un Feature Store en tiempo real. 
+   * **Cero Train-Serve Skew:** Los modelos de inferencia en tiempo real consumen exactamente las mismas definiciones de features que los modelos entrenados sobre los archivos Parquet históricos en Amazon S3.
+2. **Mantenimiento Predictivo & RUL (Remaining Useful Life):**
+   * Modelado estocástico de degradación mediante **Análisis de Supervivencia** (*Weibull Accelerated Failure Time*, *Cox Proportional Hazards*) o arquitecturas de Deep Learning secuencial (*LSTM*, *Temporal Fusion Transformers*).
+3. **Detección de Anomalías Multivariantes No Supervisada:**
+   * Detección temprana de fallas sin depender de etiquetas humanas mediante **Distancia de Mahalanobis** ($D_M^2 \sim \chi^2(4)$), *Isolation Forests* y *Deep Autoencoders* convolucionales 1D.
+4. **Cuantificación de Incertidumbre sin Supuestos Paramétricos:**
+   * Implementación de **Conformalized Quantile Regression (CQR)** para construir bandas de confianza operativa al 95% ($1 - \alpha$) con garantías marginales en muestras finitas.
+
+---
+
+## 🔬 Formulación Matemática, Modelado Estocástico y Fórmulas a Utilizar
 
 > [!NOTE]
-> A complete, publication-grade analytical treatise containing all formal mathematical proofs, stochastic queueing derivations, and multivariate statistical tests is documented in **[`docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md`](docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md)**.
+> La deducción matemática rigurosa, demostraciones de teoremas y contrastes de hipótesis se encuentran desarrollados exhaustivamente en **[`docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md`](docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md)**.
 
-### 1. Queuing Theory & Backpressure Elimination ($M/G/1$)
-Under synchronous HTTP/webhook alert dispatches with service time $S \sim \text{LogNormal}$ ($\mathbb{E}[S] \approx 250\text{ ms} \implies \mu = 4\text{ req/s}$), an arrival rate $\lambda = 1,000\text{ ev/s}$ results in utilization:
+A continuación se resumen las **9 formulaciones matemáticas fundamentales** aplicadas en este pipeline:
+
+### 1. Teoría de Colas y Eliminación Analítica de Contrapresión ($M/G/1$)
+Bajo el anti-patrón de invocar webhooks HTTP síncronos con tiempo de servicio $S \sim \text{LogNormal}$ ($\mathbb{E}[S] = 250\text{ ms} \implies \mu = 4\text{ req/s}$) frente a una ingesta $\lambda = 1,000\text{ ev/s}$, el factor de utilización satura el operador:
 $$\rho = \frac{\lambda}{\mu} = \frac{1,000}{4} = 250 \gg 1$$
-By the **Pollaczek-Khinchine formula**, queue length and waiting time diverge:
+Por la **fórmula de Pollaczek-Khinchine**, el tiempo medio de espera $W_q$ en el búfer de red diverge hacia el infinito:
 $$\lim_{\rho \to 1^+} W_q = \lim_{\rho \to 1^+} \frac{\lambda \mathbb{E}[S^2]}{2(1 - \rho)} = \infty$$
-By offloading alerts asynchronously to **Amazon SQS FIFO** ($\mu_{\text{SQS}} \ge 3,000\text{ msg/s}$), utilization collapses to $\rho \approx 1.1 \times 10^{-5} \ll 1$, guaranteeing $W_q < 0.1\text{ ms}$ and **100% elimination of Flink TaskManager buffer pool exhaustion**.
+Al desacoplar el envío hacia **Amazon SQS FIFO** ($\mu_{\text{SQS}} \ge 3,000\text{ msg/s}$), el factor de utilización colapsa a $\rho \approx 1.1 \times 10^{-5} \ll 1$, demostrando que $W_q < 0.1\text{ ms}$ y eliminando el 100% de la contrapresión en el TaskManager.
 
 ---
 
-### 2. Event-Time & Monotonic Watermark Completeness Theorem
-For out-of-order sensor streams with network transit delay $\Delta_i = t_{p, i} - t_{e, i}$, the monotonic watermark $W(t)$ is bounded by:
-$$W(t) = \max_{e \in \text{Observed}(t)} (e.t_e) - \delta_{\text{bounded}}, \quad \text{with } \delta_{\text{bounded}} = 5,000\text{ ms}$$
-To prevent inactive or quiet Kinesis shards from freezing the global stream watermark ($W_{\text{global}} = \min_{k=1}^K W_k$), our source injects an automatic idleness threshold $\tau_{\text{idle}} = 30\text{s}$:
-$$\text{If } t_{\text{wall}} - t_{\text{last\_event}}^{(k)} > \tau_{\text{idle}} \implies \text{Shard } k \text{ is marked IDLE } \implies W_{\text{global}} = \min_{j \neq k} W_j$$
+### 2. Teorema de Marcas de Agua Monótonas con Desorden Acotado
+Para un flujo de telemetría con retardo estocástico de transmisión celular/radio $\Delta_i = t_{p, i} - t_{e, i}$, la marca de agua monótona no decreciente $W(t)$ garantiza la completitud temporal de ventanas:
+$$W(t) = \max_{e \in \text{Observed}(t)} (e.t_e) - \delta_{\text{bounded}}, \quad \text{con } \delta_{\text{bounded}} = 5,000\text{ ms}$$
+Para prevenir que un shard inactivo de Kinesis congele el reloj global del stream ($W_{\text{global}} = \min_{k=1}^K W_k$), se implementa la regla de inactividad de $\tau_{\text{idle}} = 30\text{s}$:
+$$\text{Si } t_{\text{wall}} - t_{\text{last\_event}}^{(k)} > \tau_{\text{idle}} \implies \text{Shard } k \text{ pasa a estado IDLE} \implies W_{\text{global}} = \min_{j \neq k} W_j$$
 
 ---
 
-### 3. Multivariate Statistical Diagnostics & Heavy-Tailed Telemetry EDA
+### 3. Autómata Finito No Determinista de Flink CEP (Composite Failure Pattern)
+El motor de Complex Event Processing evalúa de forma continua sobre RocksDB la expresión regular temporal sobre el espacio de estados:
+$$\begin{aligned}
+\text{Pattern} = & \text{begin}("thermal\_spike") \\
+& \text{.where}(e_1 \implies e_1.\text{temperature\_celsius} > 85.0^\circ\text{C}) \\
+& \text{.followedBy}("kinetic\_vibration") \\
+& \text{.where}(e_2 \implies e_2.\text{vibration\_rms} > 6.0\text{ mm/s}) \\
+& \text{.within}(\text{Time.seconds}(30))
+\end{aligned}$$
+Complejidad espacial en RocksDB: $\mathcal{O}(|\mathcal{K}|)$ estados activos acotados por sensor.
+
+---
+
+### 4. Asimetría Multivariante de Mardia (1970)
+Para certificar estadísticamente el rechazo de la hipótesis nula de normalidad multivariante ($H_0: \mathbf{X} \sim \mathcal{N}_p(\boldsymbol{\mu}, \boldsymbol{\Sigma})$) en el vector $\mathbf{x} = [T, V_{\text{RMS}}, P, W]^T \in \mathbb{R}^4$:
+$$b_{1, p} = \frac{1}{n^2} \sum_{i=1}^n \sum_{j=1}^n \left[ (\mathbf{x}_i - \bar{\mathbf{x}})^T \mathbf{S}^{-1} (\mathbf{x}_j - \bar{\mathbf{x}}) \right]^3$$
+Estadístico asintótico de contraste:
+$$\kappa = \frac{n \cdot b_{1, p}}{6} \xrightarrow{d} \chi^2\left(\frac{p(p+1)(p+2)}{6}\right)$$
+*Resultado en la telemetría del proyecto:* $b_{1, p} = 57.34 \implies \kappa = 47,783.4$ ($df = 20, p < 10^{-100}$), demostrando que asumir normalidad gaussiana para telemetría cinética es un error metodológico severo.
+
+---
+
+### 5. Contraste de Dos Muestras Multivariante: Hotelling $T^2$
+Para validar la separabilidad estocástica entre el régimen de operación nominal ($n_1$) y el régimen bajo estrés térmico ($n_2$):
+$$T^2 = \frac{n_1 n_2}{n_1 + n_2} (\bar{\mathbf{x}}_1 - \bar{\mathbf{x}}_2)^T \mathbf{S}_{\text{pooled}}^{-1} (\bar{\mathbf{x}}_1 - \bar{\mathbf{x}}_2)$$
+Transformación exacta a distribución $F$ de Snedecor:
+$$F = \frac{n_1 + n_2 - p - 1}{p(n_1 + n_2 - 2)} T^2 \sim F(p, \; n_1 + n_2 - p - 1)$$
+
+---
+
+### 6. Distancia Cuadrática de Mahalanobis y Umbral Crítico Chi-Cuadrado
+Puntuación de anomalía multivariante ponderada por la matriz de covarianza del régimen nominal $\boldsymbol{\Sigma}_0$:
+$$D_M^2(\mathbf{x}) = (\mathbf{x} - \boldsymbol{\mu}_0)^T \boldsymbol{\Sigma}_0^{-1} (\mathbf{x} - \boldsymbol{\mu}_0) \sim \chi^2(p)$$
+Para $p = 4$ variables físicas al nivel de confianza $\alpha = 0.001$:
+$$\text{Umbral Crítico: } \chi^2_{0.999}(4) = 18.467$$
+$$\text{Regla de Decisión: } D_M^2(\mathbf{x}) > 18.467 \implies \text{Evento Anómalo Crítico}$$
+
+---
+
+### 7. Deduplicación Criptográfica Absoluta (Paradoja del Cumpleaños)
+Generación de la clave primaria idempotente para Amazon SQS FIFO y DynamoDB TTL:
+$$\text{IdempotencyToken} = \text{SHA256}(\text{sensor\_id} \parallel \text{pattern\_name} \parallel t_{\text{start}} \parallel t_{\text{end}})$$
+Cota superior de probabilidad de colisión para $N = 10^9$ incidentes acumulados:
+$$P(\text{Colisión}) \approx 1 - \exp\left(-\frac{N^2}{2 \cdot 2^{256}}\right) \approx \frac{10^{18}}{2^{257}} \approx 4.3 \times 10^{-60} \approx 0$$
+Garantiza cero tormentas de alertas ante repetición de checkpoints o reinicios de Flink.
+
+---
+
+### 8. Cuantificación de Incertidumbre Libre de Distribución (CQR)
+Para intervalos de predicción con garantía de cobertura estadística marginal sin supuestos distribucionales:
+$$C(X_{n+1}) = \left[ \hat{q}_{\alpha/2}(X_{n+1}) - Q_{1-\alpha}(E, D_{\text{cal}}), \; \hat{q}_{1-\alpha/2}(X_{n+1}) + Q_{1-\alpha}(E, D_{\text{cal}}) \right]$$
+Garantía formal de cobertura finita:
+$$P(Y_{n+1} \in C(X_{n+1})) \ge 1 - \alpha$$
+
+---
+
+### 9. Fórmulas de Ingeniería de Features para Data Science
+Generadas automáticamente a partir de las columnas agregadas en Apache Parquet:
+$$\text{Factor de Cresta Vibracional: } C_V = \frac{\text{max\_vibration}}{\text{avg\_vibration}}$$
+$$\text{Relación de Esfuerzo Electromecánico: } \eta_{\text{EM}} = \frac{\text{avg\_power}}{\text{avg\_temperature} - T_{\text{ambient}}}$$
+$$\text{Densidad Espectral de Potencia (FFT): } S_{xx}(f) = \lim_{T \to \infty} \frac{1}{T} \mathbb{E}\left[ |X_T(f)|^2 \right]$$
+
+---
+
+### 📊 Suite de Visualización y Diagnóstico Estadístico
 
 <p align="center">
   <img src="docs/images/eda_multivariate_diagnostics.png" alt="Odysseus Streaming Pipeline — Multivariate Statistical Diagnostics & Telemetry EDA" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-* **Non-Gaussian Kurtosis & Mardia Skewness:** Industrial vibration RMS exhibits heavy-tailed behavior ($\text{Skewness} = +5.30$, $\text{Kurtosis} = +38.34$, Kolmogorov-Smirnov $p < 10^{-100}$). Mardia's multivariate skewness test yields $b_{1, p} = 57.34$ ($p < 10^{-100}$), decisively rejecting multivariate normality.
-* **Mahalanobis Anomaly Distance:** Telemetry vectors $\mathbf{x} = [T, V_{\text{RMS}}, P_{\text{baro}}, W_{\text{power}}]^T \in \mathbb{R}^4$ are scored against nominal covariance $\boldsymbol{\Sigma}_0^{-1}$:
-  $$D_M^2(\mathbf{x}) = (\mathbf{x} - \boldsymbol{\mu}_0)^T \boldsymbol{\Sigma}_0^{-1} (\mathbf{x} - \boldsymbol{\mu}_0) \sim \chi^2(4)$$
-  At significance $\alpha = 0.001$, the critical boundary $\chi^2_{0.999}(4) = 18.467$ isolates 100% of catastrophic bearing fatigue events with $< 0.1\%$ false alarm rate.
-
----
-
-### 4. Phase-Plane Dynamics & Complex Event Processing (CEP NFA)
-
 <p align="center">
   <img src="docs/images/eda_phase_plane_trajectories.png" alt="Plano de Fases: Dinámica Termo-Cinética y Fronteras del Autómata Finito (CEP NFA)" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
-
-The Flink CEP engine executes a Non-deterministic Finite Automaton (NFA) tracking composite failure trajectories:
-$$\begin{aligned}
-\text{Pattern} = & \text{begin}("thermal\_spike") \\
-& \text{.where}(e_1 \implies e_1.\text{temperature} > 85.0^\circ\text{C}) \\
-& \text{.followedBy}("kinetic\_vibration") \\
-& \text{.where}(e_2 \implies e_2.\text{vibration\_rms} > 6.0\text{ mm/s}) \\
-& \text{.within}(\text{Time.seconds}(30))
-\end{aligned}$$
-
----
-
-### 5. Cryptographic Deduplication & Zero Alert Storms
-To guarantee exact idempotency across Flink checkpoint recoveries without state bloat, CEP assigns a deterministic SHA-256 token:
-$$\text{IdempotencyKey} = \text{SHA256}(\text{sensor\_id} \parallel \text{pattern\_name} \parallel t_{\text{start}} \parallel t_{\text{end}})$$
-For a volume of $N = 10^9$ incidents across 10 years, the collision probability is bounded by:
-$$P(\text{Collision}) \approx 1 - \exp\left(-\frac{N^2}{2 \times 2^{256}}\right) \approx \frac{10^{18}}{2^{257}} \approx 4.3 \times 10^{-60} \approx 0$$
-This token serves as the Amazon SQS `MessageDeduplicationId` and the primary key in DynamoDB with a 15-minute Time-To-Live (TTL).
 
 ---
 
