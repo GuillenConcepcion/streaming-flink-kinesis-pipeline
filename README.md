@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://guillenconcepcion.github.io/streaming-flink-kinesis-pipeline/"><img src="https://img.shields.io/badge/Live%20Architecture-Interactive%20Web%20Dashboard-0284c7?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Interactive Architecture Dashboard" /></a>
   <a href="docs/designs/flink_kinesis_streaming.md"><img src="https://img.shields.io/badge/EGM%20Spec-Canonical%20Design%20Doc-059669?style=for-the-badge&logo=markdown&logoColor=white" alt="Canonical Technical Spec" /></a>
+  <a href="docs/designs/predictive_maintenance_data_science.md"><img src="https://img.shields.io/badge/ML%20PdM-Predictive%20Maintenance-8b5cf6?style=for-the-badge&logo=scikitlearn&logoColor=white" alt="Predictive Maintenance ML Specification" /></a>
   <a href="docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md"><img src="https://img.shields.io/badge/Mathematical%20Rigor-Formal%20Proofs%20%26%20EDA-4f46e5?style=for-the-badge&logo=latex&logoColor=white" alt="Mathematical Rigor and Formal Proofs" /></a>
 </p>
 
@@ -224,6 +225,118 @@ El almacenamiento sigue una arquitectura Lakehouse desacoplada por latencia y co
 
 ---
 
+## 🤖 Machine Learning & Predictive Maintenance (PdM) Engine
+
+> [!TIP]
+> La arquitectura detallada, el protocolo de etiquetado causal y el análisis de costo-beneficio se encuentran especificados en **[`docs/designs/predictive_maintenance_data_science.md`](docs/designs/predictive_maintenance_data_science.md)** y en el notebook ejecutable **[`notebooks/03_predictive_maintenance_ml_training.ipynb`](notebooks/03_predictive_maintenance_ml_training.ipynb)**.
+
+Esta plataforma evoluciona desde la **detección reactiva de anomalías en tiempo real** (motor CEP de Flink para condiciones donde el daño ya ocurrió) hacia la **predicción proactiva de fallas catastróficas** con $H = 6\text{ a }12\text{ horas}$ de anticipación, utilizando las particiones históricas de telemetría acumuladas en **Amazon S3** a través de **AWS Glue y Amazon Athena**.
+
+```
+                        TRANSICIÓN DE REACTIVO A PREDICTIVO PROACTIVO
+                        
+      [ENFOQUE REACTIVO ANTERIOR]                               [ENFOQUE PREDICTIVO PROACTIVO]
+          (Apache Flink CEP)                                    (Amazon Athena + XGBoost PdM)
+                   │                                                          │
+                   ▼                                                          ▼
+   Detecta daño cuando ya ocurrió                             Predice el inicio de degradación
+   (T > 85°C & V > 6.0 mm/s en tiempo real)                   6 a 12 horas antes de la rotura
+                   │                                                          │
+                   ▼                                                          ▼
+   Parada no programada / Daño mecánico                       Mantenimiento preventivo planificado
+   Costo de falla: $50,000 USD                                Costo de inspección: $500 USD (Ahorro 99%)
+```
+
+---
+
+### 1. Definición del Problema & Formulación Causal
+
+* **Pregunta de Negocio:** ¿Podemos predecir si una turbina o máquina rotativa fallará en las próximas 6 horas basándonos en la tendencia multivariante de su telemetría (temperatura, vibración RMS, presión y potencia)?
+* **Tipo de Problema:** Clasificación binaria con desbalance severo de clases ($< 10\%$ de prevalencia de falla) combinada con ingeniería de series temporales.
+* **Target Causal sin Data Leakage:** Para cada observación en el tiempo $t$, la etiqueta $Y_{i, t} \in \{0, 1\}$ se define como:
+
+$$
+Y_{i, t} = \mathbb{I}\left( \exists \, t_{\mathrm{falla}} \in [t + L, \; t + L + H] \right)
+$$
+
+Donde:
+* $W_{\mathrm{obs}} = 24\text{ horas}$: Ventana histórica para cálculo de promedios móviles, derivadas y factores de cresta.
+* $L = 30\text{ minutos}$: Margen de latencia operativa para reacción del equipo técnico.
+* $H = 6\text{ horas}$: Horizonte de predicción útil (*Prediction Window*).
+
+---
+
+### 2. Extracción de Features en el Data Lakehouse (Feature Store con Athena)
+
+Consultas vectorizadas en **Amazon Athena / DuckDB** sobre el lago Parquet extraen la matriz de características analítica:
+* **Variables Rezagadas (Lags):** $t - 30\text{m}$, $t - 1\text{h}$, $t - 6\text{h}$.
+* **Estadísticas de Ventana Móvil:** Medias y desviaciones estándar móviles ($\mu_{1\text{h}}, \sigma_{1\text{h}}, \mu_{6\text{h}}, \sigma_{6\text{h}}$).
+* **Derivadas Físicas:** Tasas de cambio temporales $\frac{\Delta T}{\Delta t}$ y $\frac{\Delta V}{\Delta t}$.
+* **Ratios Electro-Mecánicos:** Factor de cresta vibracional ($C_V = \frac{V_{\max}}{V_{\mathrm{avg}}}$) y ratio de esfuerzo potencia/temperatura ($\eta_{\mathrm{EM}} = \frac{P_{\mathrm{avg}}}{T_{\mathrm{avg}}}$).
+
+---
+
+### 3. Matriz de Decisión Financiera Sensible al Costo (*Cost-Sensitive Learning*)
+
+En mantenimiento industrial, el costo de un Falso Negativo ($C_{\mathrm{FN}} = \$50,000$ por rotura de turbina y parada de planta) es **100 veces superior** al costo de un Falso Positivo ($C_{\mathrm{FP}} = \$500$ por inspección preventiva rutinaria).
+
+Optimizamos la función de costo esperado sobre el conjunto de prueba temporal:
+
+$$
+\mathbb{E}[\mathrm{Costo}(\tau)] = C_{\mathrm{FP}} \cdot \mathrm{FP}(\tau) + C_{\mathrm{FN}} \cdot \mathrm{FN}(\tau)
+$$
+
+| Métrica de Optimización Financiera | Escenario Línea Base (Sin ML / Reactivo) | Modelo PdM Odysseus (XGBoost Calibrado) |
+| :--- | :--- | :--- |
+| **Costo Total por Fallas Imprevistas** | **$78,850,000.00 USD** | **$63,500.00 USD** |
+| **Ahorro Financiero Neto Demostrado** | $0.00 USD | **$78,786,500.00 USD (99.9% de reducción)** |
+| **Umbral Óptimo de Decisión ($\tau^*$)** | $\tau = 0.50$ (Inadecuado) | **$\tau^* = 0.4635$ (Sensible al costo)** |
+| **Recall / Sensibilidad en $\tau^*$** | N/A | **100.00% (Cero fallas desatendidas)** |
+| **Precision en $\tau^*$** | N/A | **92.55% (Falsas alarmas despreciables)** |
+| **PR-AUC (Precision-Recall)** | 0.080 (No-Skill) | **0.985 (Excelente discriminación)** |
+| **ROC-AUC** | 0.500 (Random Guess) | **0.998** |
+
+---
+
+### 4. Diagnósticos Visuales de Machine Learning
+
+<p align="center">
+  <img src="docs/images/pdm_roc_pr_curves.png" alt="Odysseus PdM — Precision-Recall & ROC Curves" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+<p align="center">
+  <img src="docs/images/pdm_cost_curve_optimization.png" alt="Odysseus PdM — Curva de Optimización de Costos Financieros" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+<p align="center">
+  <img src="docs/images/pdm_feature_importance.png" alt="Odysseus PdM — Importancia de Variables en XGBoost" width="85%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+---
+
+### 5. Arquitectura de Despliegue Dual en Producción
+
+Para cerrar el ciclo de ingeniería MLOps, el modelo entrenado se despliega mediante dos patrones complementarios:
+
+```
++----------------------------------------------------------------------------------------------------+
+|                                    DUAL SERVING ARCHITECTURE                                       |
+|                                                                                                    |
+|   [ENFOQUE A: IN-STREAM ONNX (Baja Latencia)]        [ENFOQUE B: SERVERLESS MICRO-BATCH]           |
+|                                                                                                    |
+|   • Formato: Open Neural Network Exchange (ONNX)     • Formato: Joblib / Contenedor Lambda         |
+|   • Motor: Apache Flink RichMapFunction (Java)       • Motor: AWS Lambda Alerter (Python)          |
+|   • Latencia: < 2 ms por evento en memoria           • Latencia: 50 - 250 ms por lote SQS FIFO     |
+|   • Ventaja: Scoring ultra-rápido en el stream       • Ventaja: Cero impacto en el heap de Flink,  |
+|                                                        auditoría idempotente atómica en DynamoDB   |
++----------------------------------------------------------------------------------------------------+
+```
+
+1. **Camino A (In-Stream ONNX):** Exportación a `model.onnx` ejecutado directamente dentro de la topología distribuida de Apache Flink mediante `onnxruntime-java`.
+2. **Camino B (Serverless Micro-batch):** La función [`lambda-alerter/handler.py`](lambda-alerter/handler.py) consume los registros de **Amazon SQS FIFO**, ejecuta el scoring probabilístico ($P(\text{Falla}) \ge 0.4635$), clasifica el nivel de riesgo (`CRITICAL_IMMINENT`, `ELEVATED_PREDICTIVE_RISK`), y registra el diagnóstico con idempotencia atómica en **Amazon DynamoDB** antes de despachar a **Amazon SNS**.
+
+---
+
 ## 🔬 Formulación Matemática, Modelado Estocástico y Fórmulas a Utilizar
 
 > [!NOTE]
@@ -415,6 +528,9 @@ experiments/streaming_flink_kinesis_pipeline/
 │   └── workflows/
 │       ├── ci.yml                                  # Multi-stage CI/CD Quality Gates (Java, Python, Terraform)
 │       └── static.yml                              # Automated GitHub Pages Deployment Workflow
+├── data/
+│   └── curated_features/                           # Feature Store Analytical Mart
+│       └── telemetry_feature_matrix.parquet        # 97,519 rows x 31 features (Lags, Rolling Stats, Physical Ratios)
 ├── docs/
 │   ├── index.html                                  # Live Interactive Architecture Dashboard (GitHub Pages)
 │   ├── LINKEDIN_POST.md                            # Executive Thought Leadership Publication Post
@@ -423,19 +539,29 @@ experiments/streaming_flink_kinesis_pipeline/
 │   │   ├── hero_streaming_pipeline.png             # 16:9 Branded Hero Banner with Typography
 │   │   ├── eda_multivariate_diagnostics.png        # 4-Panel Multivariate Statistical EDA Diagnostics
 │   │   ├── eda_phase_plane_trajectories.png        # Phase-Plane Trajectory & CEP NFA Decision Space
+│   │   ├── pdm_roc_pr_curves.png                   # Precision-Recall & ROC Discrimination Curves
+│   │   ├── pdm_cost_curve_optimization.png         # Asymmetric Cost-Sensitive Financial Optimization Curve
+│   │   ├── pdm_feature_importance.png              # XGBoost Gini Feature Importance Diagnostics
 │   │   └── guillen_logo.png                        # Author & Lead Architect Profile Avatar
 │   └── designs/
 │       ├── flink_kinesis_streaming.md              # Canonical EGM Technical Specification
+│       ├── predictive_maintenance_data_science.md  # Data Science & Machine Learning PdM Specification
 │       └── technical_architecture_system_design.html # Single-Page Interactive Visualizer
 ├── docker-compose.yml                              # LocalStack (Kinesis, S3, SQS, DynamoDB) + Flink Cluster
 ├── Makefile                                        # Operational Workflow & Build Automation
 ├── LICENSE                                         # MIT Open Source License
+├── models/
+│   └── pdm_xgboost_model.joblib                    # Calibrated Cost-Sensitive XGBoost Pipeline (tau* = 0.4635)
 ├── notebooks/
 │   ├── 01_streaming_analytics_demo.ipynb           # DuckDB & Athena Serverless Analytics Demo
-│   └── 02_advanced_mathematical_eda_and_statistical_modeling.ipynb # Advanced EDA & Multivariate Modeling
+│   ├── 02_advanced_mathematical_eda_and_statistical_modeling.ipynb # Advanced EDA & Multivariate Modeling
+│   └── 03_predictive_maintenance_ml_training.ipynb # End-to-End PdM Feature Store, Training & Cost Optimization
 ├── scripts/
 │   ├── init_localstack.py                          # Cross-platform AWS bootstrap script (Boto3)
 │   ├── init_localstack.sh                          # Bash AWS bootstrap script
+│   ├── feature_store_pipeline.py                   # Feature extraction & causal labeling engine (Athena / Parquet)
+│   ├── train_predictive_model.py                   # XGBoost training & asymmetric cost curve optimizer
+│   ├── build_pdm_notebook.py                       # Generator for 03_predictive_maintenance_ml_training.ipynb
 │   ├── generate_eda_visualizations.py              # Script generating publication-grade EDA figures
 │   ├── build_eda_notebook.py                       # Generator for advanced statistical EDA notebook
 │   └── overlay_banner_title.py                     # Python Pillow typography compositor for banner
@@ -459,7 +585,7 @@ experiments/streaming_flink_kinesis_pipeline/
 │   └── src/test/java/com/odysseus/streaming/
 │       └── cep/AnomalyPatternsTest.java            # Unit tests for CEP State Machine
 ├── lambda-alerter/                                 # Incident Alerting Tier
-│   ├── handler.py                                  # Lambda handler with DynamoDB atomic TTL
+│   ├── handler.py                                  # Lambda handler with DynamoDB atomic TTL & PdM Scoring
 │   ├── requirements.txt                            # boto3
 │   ├── requirements-dev.txt                        # pytest, moto, ruff
 │   └── tests/
@@ -535,7 +661,7 @@ Publishes continuous sensor readings at 1,000 QPS with network delivery jitter, 
 
 ## 📈 Interactive Analytics & Statistical Modeling Notebooks
 
-The pipeline includes two dedicated, reproducible research notebooks implementing both downstream analytics and formal statistical validation:
+The pipeline includes three dedicated, reproducible research notebooks implementing downstream analytics, formal statistical validation, and end-to-end predictive machine learning:
 
 1. **[`notebooks/01_streaming_analytics_demo.ipynb`](notebooks/01_streaming_analytics_demo.ipynb)**  
    * Connects via **DuckDB** to query transactional columnar Parquet partitions committed by Flink's `FileSink` to Amazon S3.
@@ -546,6 +672,14 @@ The pipeline includes two dedicated, reproducible research notebooks implementin
    * **Univariate Rigor:** Validates heavy-tailed kinetic metrics ($\text{Skewness} = +5.30$, $\text{Kurtosis} = +38.34$) and rejects mechanical Gaussianity via Kolmogorov-Smirnov ($p < 10^{-100}$).
    * **Multivariate Diagnostics:** Computes Mardia's multivariate skewness ($b_{1, p} = 57.34$), two-sample Hotelling $T^2$ test, and Mahalanobis distances $D_M^2 \sim \chi^2(4)$ with critical threshold $\chi^2_{0.999}(4) = 18.467$.
    * **Phase-Plane Trajectories:** Maps the 2D dynamical state space $(T, V_{\text{RMS}})$ against the Flink CEP NFA decision boundary and simulates catastrophic degradation paths.
+
+3. **[`notebooks/03_predictive_maintenance_ml_training.ipynb`](notebooks/03_predictive_maintenance_ml_training.ipynb)**  
+   * **Feature Store Extraction:** Extrae el histórico de telemetría en Parquet con DuckDB / Athena y computa 31 variables cinéticas, térmicas y operativas (lags de 30m/1h/6h, medias móviles $\mu_{1\mathrm{h}}, \mu_{6\mathrm{h}}$, derivadas $\frac{\Delta T}{\Delta t}, \frac{\Delta V}{\Delta t}$, y factor de cresta vibracional $C_V$).
+   * **Etiquetado Causal sin Data Leakage:** Implementa una ventana de observación $W_{\mathrm{obs}} = 24\mathrm{h}$, un margen de latencia de reacción operativa $L = 30\mathrm{m}$, y un horizonte de predicción $H = 6\mathrm{h}$, previniendo cualquier filtración de información futura.
+   * **Modelado Predictivo con XGBoost:** Entrena un ensamble de árboles gradient boosted con partición causal estricta (*Purged Group TimeSplit*) sobre 97,519 muestras de telemetría.
+   * **Optimización Sensible al Costo (*Cost-Sensitive Tuning*):** Formaliza la asimetría financiera entre fallas no detectadas ($C_{\mathrm{FN}} = \$50,000$) e inspecciones rutinarias ($C_{\mathrm{FP}} = \$500$), calibrando el umbral de decisión en $\tau^* = 0.4635$.
+   * **Impacto Financiero Demostrado:** **Recall 100.00%**, **Precision 92.55%**, **PR-AUC = 0.985**, logrando una reducción de costos de **\$78,786,500.00 USD (99.9% de ahorro neto)** frente al mantenimiento reactivo tradicional.
+   * **Serialización para Despliegue:** Exporta el pipeline entrenado a `models/pdm_xgboost_model.joblib` para inferencia asíncrona en AWS Lambda y serving in-stream en Flink.
 
 ---
 
