@@ -298,23 +298,70 @@ $$
 
 ---
 
-### 4. Diagnósticos Visuales de Machine Learning
+### 4. Diagnósticos Estadísticos Inferenciales, Benchmark 70/15/15, SHAP XAI & Pronóstico Holt-Winters
 
+A través de la suite unificada **[`scripts/iot_predictive_maintenance_suite.py`](scripts/iot_predictive_maintenance_suite.py)** y el cuarto notebook interactivo **[`notebooks/04_unified_statistical_inferential_xai_pdm_suite.ipynb`](notebooks/04_unified_statistical_inferential_xai_pdm_suite.ipynb)**, incorporamos validación inferencial rigurosa, diagnóstico multiclase de causa raíz y explicabilidad global:
+
+#### A. Pruebas de Hipótesis Inferenciales (Normal vs. Pre-Falla $\le 12\text{h}$)
+
+| Sensor Físico | Mediana Normal ($P_{50} \pm \mathrm{IQR}$) | Mediana Pre-Falla ($P_{50} \pm \mathrm{IQR}$) | Welch $t$-stat | Mann-Whitney $p$-valor | Divergencia $D_{\mathrm{KS}}$ | Tamaño del Efecto ($d$ de Cohen) | ANOVA Multiclase ($F$-stat) | Estacionariedad ADF ($p$-valor) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Temperatura (°C)** | $61.95 \pm 3.40$ | $68.55 \pm 6.77$ | $+26.74$ | $7.02 \times 10^{-238}$ | $0.695$ | **$+2.83$ (Masivo)** | $1,968.8$ | $1.71 \times 10^{-18}$ |
+| **Vibración RMS (mm/s)** | $1.61 \pm 0.36$ | $2.91 \pm 1.23$ | $+29.14$ | $2.23 \times 10^{-294}$ | $0.816$ | **$+3.75$ (Masivo)** | $3,390.8$ | $3.26 \times 10^{-13}$ |
+| **Presión Estática (kPa)** | $101.98 \pm 1.57$ | $101.34 \pm 5.51$ | $-13.11$ | $2.48 \times 10^{-34}$ | $0.295$ | **$-1.80$ (Muy Grande)** | $3,337.2$ | $2.45 \times 10^{-12}$ |
+
+#### B. Benchmark de Ensambles con Partición Cronológica Tripartita (70% Train / 15% Val / 15% Test)
+
+Calibrando el umbral de decisión $\tau^*$ estrictamente sobre el conjunto de **Validación (15%)** con restricción de precisión mínima en planta ($\ge 80\%$) para erradicar el *Validation Leakage*:
+
+| Modelo Evaluado | PR-AUC | ROC-AUC | Umbral Calibrado ($\tau^*$) | Precision (Test) | Recall (Test) | F1-Score (Test) | Ahorro Financiero Neto (Test) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`XGB_HistGradientBoosting`** | **0.9454** | **0.9791** | $\tau^* = 0.305$ | **96.80%** | **84.03%** | **0.8996** | **\$6,048,000 USD** |
+| **`RandomForest_Balanced`** | 0.9391 | 0.9764 | $\tau^* = 0.255$ | 95.20% | 82.64% | 0.8848 | \$5,947,000 USD |
+| **`LightGBM_EWS`** | 0.9361 | 0.9741 | $\tau^* = 0.070$ | **96.80%** | **84.03%** | **0.8996** | **\$6,048,000 USD** |
+
+---
+
+### 5. Galería de Visualizaciones Ejecutivas de Machine Learning & MLOps
+
+#### Panel 01: Serie Temporal Multi-Sensor y Ventanas de Pre-Falla ($\le 12\text{h}$)
 <p align="center">
-  <img src="docs/images/pdm_roc_pr_curves.png" alt="Odysseus PdM — Precision-Recall & ROC Curves" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+  <img src="docs/images/01_telemetry_degradation_timeline.png" alt="01 Telemetry Degradation Timeline" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
+#### Panel 02: Distribuciones Inferenciales de Violín ($p$ de Mann-Whitney, $D_{\mathrm{KS}}$ y $d$ de Cohen)
+<p align="center">
+  <img src="docs/images/02_inferential_distributions_violin.png" alt="02 Inferential Distributions Violin" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+#### Panel 03: Benchmark Comparativo de Curvas Precision-Recall (PR-AUC) y ROC-AUC
+<p align="center">
+  <img src="docs/images/03_model_benchmark_pr_roc_curves.png" alt="03 Model Benchmark PR & ROC Curves" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+#### Panel 04: Calibración del Umbral de Probabilidad y Matriz de Confusión Multiclase (`OVERHEAT`, `BEARING_VIB`, `PRESS_DROP`)
+<p align="center">
+  <img src="docs/images/04_threshold_optimization_and_multiclass_cm.png" alt="04 Threshold Optimization and Multiclass Confusion Matrix" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+#### Panel 05: Explicabilidad Global XAI con SHAP (`shap.TreeExplainer` — Impacto $|\text{SHAP}|$)
+<p align="center">
+  <img src="docs/images/05_shap_global_feature_importance.png" alt="05 SHAP Global Feature Importance" width="90%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+#### Panel 06: Proyección de Serie Temporal Holt-Winters 24h frente al Límite Crítico ISO-10816 ($6.5\text{ mm/s}$)
+<p align="center">
+  <img src="docs/images/06_timeseries_critical_threshold_forecast.png" alt="06 Holt-Winters Time-Series Critical Threshold Forecast" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+</p>
+
+#### Paneles Adicionales: Optimización de Costos Financieros Asimétricos y Ganancia en XGBoost
 <p align="center">
   <img src="docs/images/pdm_cost_curve_optimization.png" alt="Odysseus PdM — Curva de Optimización de Costos Financieros" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-<p align="center">
-  <img src="docs/images/pdm_feature_importance.png" alt="Odysseus PdM — Importancia de Variables en XGBoost" width="85%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
-</p>
-
 ---
 
-### 5. Arquitectura de Despliegue Dual en Producción
+### 6. Arquitectura de Despliegue Dual en Producción
 
 Para cerrar el ciclo de ingeniería MLOps, el modelo entrenado se despliega mediante dos patrones complementarios:
 
@@ -325,15 +372,15 @@ Para cerrar el ciclo de ingeniería MLOps, el modelo entrenado se despliega medi
 |   [ENFOQUE A: IN-STREAM ONNX (Baja Latencia)]        [ENFOQUE B: SERVERLESS MICRO-BATCH]           |
 |                                                                                                    |
 |   • Formato: Open Neural Network Exchange (ONNX)     • Formato: Joblib / Contenedor Lambda         |
-|   • Motor: Apache Flink RichMapFunction (Java)       • Motor: AWS Lambda Alerter (Python)          |
+|   • Motor: Apache Flink RichMapFunction (PyFlink)    • Motor: AWS Lambda Alerter (Python)          |
 |   • Latencia: < 2 ms por evento en memoria           • Latencia: 50 - 250 ms por lote SQS FIFO     |
 |   • Ventaja: Scoring ultra-rápido en el stream       • Ventaja: Cero impacto en el heap de Flink,  |
 |                                                        auditoría idempotente atómica en DynamoDB   |
 +----------------------------------------------------------------------------------------------------+
 ```
 
-1. **Camino A (In-Stream ONNX):** Exportación a `model.onnx` ejecutado directamente dentro de la topología distribuida de Apache Flink mediante `onnxruntime-java`.
-2. **Camino B (Serverless Micro-batch):** La función [`lambda-alerter/handler.py`](lambda-alerter/handler.py) consume los registros de **Amazon SQS FIFO**, ejecuta el scoring probabilístico ($P(\text{Falla}) \ge 0.4635$), clasifica el nivel de riesgo (`CRITICAL_IMMINENT`, `ELEVATED_PREDICTIVE_RISK`), y registra el diagnóstico con idempotencia atómica en **Amazon DynamoDB** antes de despachar a **Amazon SNS**.
+1. **Camino A (In-Stream ONNX):** Operador [`outputs/iot_predictive_maintenance/artifacts/pyflink_onnx_streaming_operator.py`](outputs/iot_predictive_maintenance/artifacts/pyflink_onnx_streaming_operator.py) con la clase `ONNXPredictiveMaintenanceScoringMap(RichMapFunction)` que inicializa `onnxruntime.InferenceSession` en el método `open()` del TaskManager.
+2. **Camino B (Serverless Micro-batch):** La función [`lambda-alerter/handler.py`](lambda-alerter/handler.py) consume los registros de **Amazon SQS FIFO**, ejecuta el scoring probabilístico (`failure_probability_score`), diagnostica el modo específico de falla (`predicted_failure_mode` $\in \{\text{OVERHEAT\_FAULT}, \text{BEARING\_VIBRATION\_WEAR}, \text{PRESSURE\_VALVE\_DROP}\}$), y registra el incidente con idempotencia atómica en **Amazon DynamoDB** antes de despachar a **Amazon SNS**.
 
 ---
 
@@ -552,16 +599,25 @@ experiments/streaming_flink_kinesis_pipeline/
 ├── LICENSE                                         # MIT Open Source License
 ├── models/
 │   └── pdm_xgboost_model.joblib                    # Calibrated Cost-Sensitive XGBoost Pipeline (tau* = 0.4635)
+├── outputs/
+│   └── iot_predictive_maintenance/                 # Unified PdM Suite Outputs
+│       ├── figures/                                # 6 Publication-Grade Executive Diagnostic PNGs (01-06)
+│       └── artifacts/
+│           ├── pyflink_onnx_streaming_operator.py  # Low-latency PyFlink ONNX RichMapFunction
+│           └── pdm_evaluation_summary.json         # Full Inferential, Benchmark, SHAP & Forecast Audit
 ├── notebooks/
 │   ├── 01_streaming_analytics_demo.ipynb           # DuckDB & Athena Serverless Analytics Demo
 │   ├── 02_advanced_mathematical_eda_and_statistical_modeling.ipynb # Advanced EDA & Multivariate Modeling
-│   └── 03_predictive_maintenance_ml_training.ipynb # End-to-End PdM Feature Store, Training & Cost Optimization
+│   ├── 03_predictive_maintenance_ml_training.ipynb # End-to-End PdM Feature Store, Training & Cost Optimization
+│   └── 04_unified_statistical_inferential_xai_pdm_suite.ipynb      # Unified Inferential, Multiclass, SHAP & Holt-Winters Suite
 ├── scripts/
 │   ├── init_localstack.py                          # Cross-platform AWS bootstrap script (Boto3)
 │   ├── init_localstack.sh                          # Bash AWS bootstrap script
+│   ├── iot_predictive_maintenance_suite.py         # Unified 5-Stage Athena SQL, Inferential, Multiclass, SHAP & ONNX Suite
 │   ├── feature_store_pipeline.py                   # Feature extraction & causal labeling engine (Athena / Parquet)
 │   ├── train_predictive_model.py                   # XGBoost training & asymmetric cost curve optimizer
 │   ├── build_pdm_notebook.py                       # Generator for 03_predictive_maintenance_ml_training.ipynb
+│   ├── build_unified_suite_notebook.py             # Generator for 04_unified_statistical_inferential_xai_pdm_suite.ipynb
 │   ├── generate_eda_visualizations.py              # Script generating publication-grade EDA figures
 │   ├── build_eda_notebook.py                       # Generator for advanced statistical EDA notebook
 │   └── overlay_banner_title.py                     # Python Pillow typography compositor for banner
@@ -661,7 +717,7 @@ Publishes continuous sensor readings at 1,000 QPS with network delivery jitter, 
 
 ## 📈 Interactive Analytics & Statistical Modeling Notebooks
 
-The pipeline includes three dedicated, reproducible research notebooks implementing downstream analytics, formal statistical validation, and end-to-end predictive machine learning:
+The pipeline includes four dedicated, reproducible research notebooks implementing downstream analytics, formal statistical validation, and end-to-end predictive machine learning:
 
 1. **[`notebooks/01_streaming_analytics_demo.ipynb`](notebooks/01_streaming_analytics_demo.ipynb)**  
    * Connects via **DuckDB** to query transactional columnar Parquet partitions committed by Flink's `FileSink` to Amazon S3.
@@ -680,6 +736,12 @@ The pipeline includes three dedicated, reproducible research notebooks implement
    * **Optimización Sensible al Costo (*Cost-Sensitive Tuning*):** Formaliza la asimetría financiera entre fallas no detectadas ($C_{\mathrm{FN}} = \$50,000$) e inspecciones rutinarias ($C_{\mathrm{FP}} = \$500$), calibrando el umbral de decisión en $\tau^* = 0.4635$.
    * **Impacto Financiero Demostrado:** **Recall 100.00%**, **Precision 92.55%**, **PR-AUC = 0.985**, logrando una reducción de costos de **\$78,786,500.00 USD (99.9% de ahorro neto)** frente al mantenimiento reactivo tradicional.
    * **Serialización para Despliegue:** Exporta el pipeline entrenado a `models/pdm_xgboost_model.joblib` para inferencia asíncrona en AWS Lambda y serving in-stream en Flink.
+
+4. **[`notebooks/04_unified_statistical_inferential_xai_pdm_suite.ipynb`](notebooks/04_unified_statistical_inferential_xai_pdm_suite.ipynb)**  
+   * **Athena / DuckDB Feature Store SQL (`ATHENA_FEATURE_STORE_SQL`):** Ejecuta consultas SQL con ventanas deslizantes de 6h y 24h (`AVG`, `STDDEV_SAMP`, `MAX`), rezagos ($1\mathrm{h}, 3\mathrm{h}, 6\mathrm{h}$) y etiquetado dual (`target_binary` $\le 12\mathrm{h}$ y `target_multiclass`).
+   * **Batería de 6 Pruebas de Hipótesis Inferenciales:** Contrasta operación normal frente a pre-falla mediante **Welch $t$-test**, **Mann-Whitney $U$**, **Kolmogorov-Smirnov ($D_{\mathrm{KS}}$)**, **Tamaño del Efecto $d$ de Cohen** ($d = +3.75$ en vibración), **ANOVA de una vía ($F$-test)** y **Augmented Dickey-Fuller (ADF)**.
+   * **Partición Cronológica Tripartita (70/15/15) y Diagnóstico Multiclase:** Evalúa `LightGBM_EWS`, `XGB_HistGradientBoosting` (PR-AUC = $0.9454$, Precision = $96.8\%$) y `RandomForest_Balanced`, diagnosticando el modo exacto de falla (`OVERHEAT_FAULT`, `BEARING_VIBRATION_WEAR`, `PRESSURE_VALVE_DROP`).
+   * **Explicabilidad Global con SHAP & Pronóstico Holt-Winters ISO-10816:** Cuantifica el impacto causal $|\text{SHAP}|$ con `shap.TreeExplainer` y proyecta en cuántas horas la vibración cruzará el umbral crítico normativo ($6.5\text{ mm/s}$) con bandas de confianza al 95%.
 
 ---
 
