@@ -171,3 +171,4 @@ for fname in fig_files:
 
 if __name__ == "__main__":
     build_notebook()
+

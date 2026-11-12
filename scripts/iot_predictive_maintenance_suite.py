@@ -415,6 +415,7 @@ def train_and_evaluate_models(df: pd.DataFrame):
     y_test_multi = test_df["target_multiclass"].values
     y_pred_multi = multiclass_clf.predict(X_test)
     cm_multi = confusion_matrix(y_test_multi, y_pred_multi, labels=multi_classes, normalize="true")
+    cm_multi_counts = confusion_matrix(y_test_multi, y_pred_multi, labels=multi_classes)
 
     # SHAP Global Explainability on Champion LightGBM_EWS
     champion_model = benchmark_results["LightGBM_EWS"]["model"]
@@ -440,6 +441,7 @@ def train_and_evaluate_models(df: pd.DataFrame):
         "multiclass_clf": multiclass_clf,
         "multi_classes": multi_classes,
         "cm_multi": cm_multi,
+        "cm_multi_counts": cm_multi_counts,
         "shap_df": shap_df,
     }
 
@@ -454,12 +456,11 @@ def forecast_sensor_critical_threshold(
     and damped/additive trend) model to a degrading turbine's vibration series
     to estimate Time-to-Failure (hours until crossing ISO-10816 6.5 mm/s limit).
     """
-    # Construct a realistic 96-hour active degradation trajectory approaching critical limit
     np.random.seed(101)
     hist_hours = 96
     t_idx = np.arange(hist_hours)
     diurnal = 0.28 * np.sin(2 * np.pi * t_idx / 24.0)
-    trend = 1.60 + 0.012 * t_idx + 0.00026 * (t_idx ** 2)
+    trend = 1.65 + 0.0135 * t_idx + 0.000285 * (t_idx ** 2)
     noise = np.random.normal(0, 0.12, hist_hours)
     y_hist = trend + diurnal + noise
 
@@ -500,7 +501,7 @@ def forecast_sensor_critical_threshold(
 
 
 # =============================================================================
-# 4. SUITE OF 6 EXECUTIVE VISUALIZATIONS
+# 4. SUITE OF 6 EXECUTIVE VISUALIZATIONS (ENHANCED)
 # =============================================================================
 
 def generate_all_visualizations(
@@ -511,41 +512,63 @@ def generate_all_visualizations(
     figures_dir: str,
     docs_images_dir: str,
 ):
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import Patch
+
     os.makedirs(figures_dir, exist_ok=True)
     os.makedirs(docs_images_dir, exist_ok=True)
     plt.style.use("dark_background")
 
     # -------------------------------------------------------------------------
-    # Figure 01: Telemetry Degradation Timeline (Multi-Sensor + 12h Pre-Failure)
+    # Figure 01: Telemetry Degradation Timeline (Multi-Sensor + Thresholds & Callout)
     # -------------------------------------------------------------------------
     sub = df[df["sensor_id"] == "TURBINE-001"].sort_values("timestamp").iloc[120:240].copy()
-    fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True, facecolor="#0a0e17")
+    fig, axes = plt.subplots(3, 1, figsize=(14, 9.5), sharex=True, facecolor="#0a0e17")
     sensors_cfg = [
-        ("temperature", "temp_roll_avg_24h", "Temperature (°C)", "#00f0ff", "#f59e0b"),
-        ("vibration", "vib_roll_avg_24h", "Vibration RMS (mm/s)", "#10b981", "#ec4899"),
-        ("pressure", "press_roll_avg_24h", "Pressure (kPa)", "#a855f7", "#38bdf8"),
+        ("temperature", "temp_roll_avg_24h", "Temperature (°C)", "#00f0ff", "#f59e0b", 85.0, "Critical Thermal Limit (85°C)"),
+        ("vibration", "vib_roll_avg_24h", "Vibration RMS (mm/s)", "#10b981", "#ec4899", 6.5, "ISO-10816 Limit (6.5 mm/s)"),
+        ("pressure", "press_roll_avg_24h", "Pressure (kPa)", "#a855f7", "#38bdf8", 88.0, "Min Valve Pressure (88 kPa)"),
     ]
-    for ax, (raw_c, roll_c, ylabel, c1, c2) in zip(axes, sensors_cfg):
+    pre_mask = sub["target_binary"] == 1
+    active_modes = [m for m in sub.loc[pre_mask, "target_multiclass"].unique() if m != "NORMAL"]
+    mode_label = active_modes[0] if active_modes else "THERMAL_KINETIC_WEAR"
+
+    for idx_ax, (ax, (raw_c, roll_c, ylabel, c1, c2, crit_val, crit_lbl)) in enumerate(zip(axes, sensors_cfg)):
         ax.set_facecolor("#111827")
-        ax.plot(sub["timestamp"], sub[raw_c], color=c1, alpha=0.65, lw=1.4, label=f"Raw {raw_c.capitalize()}")
-        ax.plot(sub["timestamp"], sub[roll_c], color=c2, lw=2.3, label="24h Rolling Mean")
-        # Shade pre-failure 12h windows
-        pre_mask = sub["target_binary"] == 1
+        ax.plot(sub["timestamp"], sub[raw_c], color=c1, alpha=0.75, lw=1.5, label=f"Raw {raw_c.capitalize()}")
+        ax.plot(sub["timestamp"], sub[roll_c], color=c2, lw=2.4, label="24h Rolling Mean")
+        ax.axhline(crit_val, color="#ef4444", linestyle="--", lw=1.4, alpha=0.85, label=crit_lbl)
+
+        ymin = min(sub[raw_c].min(), crit_val) * 0.96
+        ymax = max(sub[raw_c].max(), crit_val) * 1.04
         ax.fill_between(
             sub["timestamp"],
-            sub[raw_c].min(),
-            sub[raw_c].max(),
+            ymin,
+            ymax,
             where=pre_mask,
             color="#ef4444",
-            alpha=0.25,
-            label="Pre-Failure Horizon (<=12h)",
+            alpha=0.22,
+            label=f"Pre-Failure <=12h ({mode_label})",
         )
+        if idx_ax == 0 and pre_mask.any():
+            mid_ts = sub.loc[pre_mask, "timestamp"].iloc[len(sub.loc[pre_mask]) // 2]
+            ax.annotate(
+                f"Active Mode:\n{mode_label}",
+                xy=(mid_ts, sub.loc[pre_mask, raw_c].max()),
+                xytext=(mid_ts + pd.Timedelta(hours=10), ymax * 0.90),
+                arrowprops=dict(arrowstyle="->", color="#f8fafc", lw=1.5),
+                fontsize=9,
+                fontweight="bold",
+                color="#f8fafc",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="#7f1d1d", edgecolor="#ef4444", alpha=0.92),
+            )
+        ax.set_ylim(ymin, ymax)
         ax.set_ylabel(ylabel, color="#f8fafc", fontsize=10, fontweight="bold")
-        ax.legend(loc="upper left", fontsize=8.5, framealpha=0.85)
+        ax.legend(loc="upper left", fontsize=8.5, framealpha=0.88, ncol=2)
         ax.grid(color="#1e293b", linestyle=":")
 
     axes[0].set_title(
-        "01. MULTI-SENSOR TELEMETRY DEGRADATION TIMELINE & 12H PRE-FAILURE HORIZON (TURBINE-001)",
+        "01. MULTI-SENSOR TELEMETRY DEGRADATION TIMELINE, CRITICAL THRESHOLDS & 12H PRE-FAILURE HORIZON",
         color="#f8fafc",
         fontsize=12.5,
         fontweight="bold",
@@ -557,9 +580,9 @@ def generate_all_visualizations(
     plt.close()
 
     # -------------------------------------------------------------------------
-    # Figure 02: Inferential Distributions Violin Plot (Mann-Whitney & Cohen's d)
+    # Figure 02: Inferential Distributions Violin Plot + Internal IQR Boxplot
     # -------------------------------------------------------------------------
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5), facecolor="#0a0e17")
+    fig, axes = plt.subplots(1, 3, figsize=(16, 6), facecolor="#0a0e17")
     inf_df = stats_res["inferential"].set_index("Sensor")
     for ax, col, title, unit in zip(
         axes,
@@ -570,19 +593,35 @@ def generate_all_visualizations(
         ax.set_facecolor("#111827")
         s0 = df[df["target_binary"] == 0][col].values
         s1 = df[df["target_binary"] == 1][col].values
-        parts = ax.violinplot([s0, s1], positions=[0, 1], showmeans=False, showmedians=True, widths=0.65)
+        parts = ax.violinplot([s0, s1], positions=[0, 1], showmeans=False, showmedians=False, showextrema=False, widths=0.68)
         for idx_pc, pc in enumerate(parts["bodies"]):
             pc.set_facecolor("#00f0ff" if idx_pc == 0 else "#ef4444")
             pc.set_edgecolor("#f8fafc")
-            pc.set_alpha(0.65)
-        parts["cmedians"].set_color("#f59e0b")
-        parts["cmedians"].set_linewidth(2.2)
+            pc.set_alpha(0.55)
+
+        # Overlay internal Boxplot showing P25, Median P50, and P75 (IQR)
+        bp = ax.boxplot(
+            [s0, s1],
+            positions=[0, 1],
+            widths=0.16,
+            patch_artist=True,
+            showfliers=False,
+            boxprops=dict(facecolor="#0f172a", edgecolor="#f8fafc", linewidth=1.5),
+            medianprops=dict(color="#f59e0b", linewidth=2.5),
+            whiskerprops=dict(color="#f8fafc", linewidth=1.3, linestyle="--"),
+            capprops=dict(color="#f8fafc", linewidth=1.3),
+        )
 
         d_val = inf_df.loc[col, "Cohens_d"]
         p_mwu = inf_df.loc[col, "MannWhitney_p"]
         ks_val = inf_df.loc[col, "KS_stat"]
         ax.set_xticks([0, 1])
-        ax.set_xticklabels(["Normal (0)", "Pre-Failure <=12h (1)"], color="#f8fafc", fontsize=9.5)
+        ax.set_xticklabels(
+            [f"Normal (0)\n(n = {len(s0):,})", f"Pre-Failure <=12h (1)\n(n = {len(s1):,})"],
+            color="#f8fafc",
+            fontsize=9.5,
+            fontweight="bold",
+        )
         ax.set_title(
             f"{title} ({unit})\nCohen's d = {d_val:.2f} | KS = {ks_val:.2f} | MWU p = {p_mwu:.1e}",
             color="#f8fafc",
@@ -592,9 +631,9 @@ def generate_all_visualizations(
         ax.grid(color="#1e293b", linestyle=":")
 
     fig.suptitle(
-        "02. INFERENTIAL REGIME SEPARATION: PARAMETRIC & NON-PARAMETRIC DISTRIBUTIONS",
+        "02. INFERENTIAL REGIME SEPARATION: VIOLIN DENSITIES WITH INTERNAL IQR (P25-P75) & MEDIAN (P50) BOXPLOTS",
         color="#f8fafc",
-        fontsize=13,
+        fontsize=12.5,
         fontweight="bold",
         y=1.03,
     )
@@ -605,9 +644,9 @@ def generate_all_visualizations(
     plt.close()
 
     # -------------------------------------------------------------------------
-    # Figure 03: Model Benchmark PR-AUC & ROC-AUC Curves (3 Ensemble Models)
+    # Figure 03: Model Benchmark PR-AUC & ROC-AUC with Operating Point & Inset Zoom
     # -------------------------------------------------------------------------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), facecolor="#0a0e17")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15.5, 6.2), facecolor="#0a0e17")
     ax1.set_facecolor("#111827")
     ax2.set_facecolor("#111827")
     colors = {
@@ -615,6 +654,9 @@ def generate_all_visualizations(
         "XGB_HistGradientBoosting": "#10b981",
         "RandomForest_Balanced": "#f59e0b",
     }
+    ax_ins = ax2.inset_axes([0.42, 0.18, 0.52, 0.45])
+    ax_ins.set_facecolor("#0f172a")
+
     for name, res in ml_res["benchmark"].items():
         ax1.plot(
             res["rec_curve"],
@@ -630,21 +672,40 @@ def generate_all_visualizations(
             lw=2.3,
             label=f"{name} (ROC-AUC = {res['roc_auc']:.3f})",
         )
+        ax_ins.plot(res["fpr_curve"], res["tpr_curve"], color=colors[name], lw=2.0)
+
+    # Mark Champion Operating Point on PR Curve
+    champ = ml_res["benchmark"]["XGB_HistGradientBoosting"]
+    ax1.scatter(
+        [champ["recall"]],
+        [champ["precision"]],
+        color="#ef4444",
+        edgecolors="#f8fafc",
+        s=150,
+        zorder=6,
+        marker="*",
+        label=f"Calibrated Point (tau*={champ['opt_tau']:.2f}: P={champ['precision']*100:.1f}%, R={champ['recall']*100:.1f}%)",
+    )
 
     prevalence = float(np.mean(ml_res["y_test"]))
     ax1.axhline(prevalence, color="#ef4444", linestyle=":", label=f"No-Skill Baseline ({prevalence:.3f})")
-    ax1.set_title("Precision-Recall Curve Benchmark (Test Split)", color="#f8fafc", fontsize=12, fontweight="bold")
+    ax1.set_title("Precision-Recall Curve Benchmark & Calibrated Operating Point", color="#f8fafc", fontsize=11.5, fontweight="bold")
     ax1.set_xlabel("Recall (Sensitivity)", color="#94a3b8")
     ax1.set_ylabel("Precision (Positive Predictive Value)", color="#94a3b8")
-    ax1.legend(loc="lower left", fontsize=9)
+    ax1.legend(loc="lower left", fontsize=8.5, framealpha=0.9)
     ax1.grid(color="#1e293b", linestyle=":")
 
     ax2.plot([0, 1], [0, 1], color="#64748b", linestyle=":", label="Random Guess (0.500)")
-    ax2.set_title("ROC Curve Benchmark (Test Split)", color="#f8fafc", fontsize=12, fontweight="bold")
+    ax2.set_title("ROC Curve Benchmark with Low-FPR Inset Zoom", color="#f8fafc", fontsize=11.5, fontweight="bold")
     ax2.set_xlabel("False Positive Rate (1 - Specificity)", color="#94a3b8")
     ax2.set_ylabel("True Positive Rate (Sensitivity)", color="#94a3b8")
-    ax2.legend(loc="lower right", fontsize=9)
+    ax2.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
     ax2.grid(color="#1e293b", linestyle=":")
+
+    ax_ins.set_xlim(0.0, 0.15)
+    ax_ins.set_ylim(0.82, 1.00)
+    ax_ins.set_title("Zoom: FPR in [0.00, 0.15]", fontsize=8.5, color="#f8fafc", fontweight="bold")
+    ax_ins.grid(color="#334155", linestyle=":")
 
     plt.tight_layout()
     p3 = os.path.join(figures_dir, "03_model_benchmark_pr_roc_curves.png")
@@ -653,45 +714,56 @@ def generate_all_visualizations(
     plt.close()
 
     # -------------------------------------------------------------------------
-    # Figure 04: Threshold Optimization & Multiclass Confusion Matrix
+    # Figure 04: Smooth Threshold Calibration & Dark-Mode Multiclass Confusion Matrix
     # -------------------------------------------------------------------------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15.5, 6), facecolor="#0a0e17")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6.2), facecolor="#0a0e17")
     ax1.set_facecolor("#111827")
     ax2.set_facecolor("#111827")
 
-    lgb_res = ml_res["benchmark"]["LightGBM_EWS"]
-    vc = lgb_res["val_curve"]
-    opt_tau = lgb_res["opt_tau"]
-    ax1.plot(vc["threshold"], vc["precision"], color="#00f0ff", lw=2.0, label="Precision")
-    ax1.plot(vc["threshold"], vc["recall"], color="#f59e0b", lw=2.0, label="Recall")
-    ax1.plot(vc["threshold"], vc["f1"], color="#10b981", lw=2.5, label="F1-Score")
-    ax1.axvline(opt_tau, color="#ef4444", linestyle="--", lw=2.0, label=f"Optimal Threshold (tau* = {opt_tau:.2f})")
-    ax1.set_title("Validation Threshold Calibration (Precision / Recall / F1)", color="#f8fafc", fontsize=11.5, fontweight="bold")
+    xgb_res = ml_res["benchmark"]["XGB_HistGradientBoosting"]
+    vc = xgb_res["val_curve"].copy()
+    # Smooth validation curves with rolling window of 7 steps for clean visualization of trade-off
+    vc["prec_smooth"] = vc["precision"].rolling(7, center=True, min_periods=1).mean()
+    vc["rec_smooth"] = vc["recall"].rolling(7, center=True, min_periods=1).mean()
+    vc["f1_smooth"] = vc["f1"].rolling(7, center=True, min_periods=1).mean()
+    opt_tau = xgb_res["opt_tau"]
+
+    ax1.plot(vc["threshold"], vc["prec_smooth"], color="#00f0ff", lw=2.3, label="Precision (PPV)")
+    ax1.plot(vc["threshold"], vc["rec_smooth"], color="#f59e0b", lw=2.3, label="Recall (Sensitivity)")
+    ax1.plot(vc["threshold"], vc["f1_smooth"], color="#10b981", lw=2.7, label="F1-Score")
+    ax1.axvline(opt_tau, color="#ef4444", linestyle="--", lw=2.2, label=f"Optimal Calibrated Threshold (tau* = {opt_tau:.2f})")
+    ax1.axhline(0.80, color="#94a3b8", linestyle=":", lw=1.4, label="Min Plant Precision Constraint (80%)")
+    ax1.set_title("Validation Threshold Calibration (XGB_HistGradientBoosting)", color="#f8fafc", fontsize=11.5, fontweight="bold")
     ax1.set_xlabel("Probability Decision Threshold (tau)", color="#94a3b8")
     ax1.set_ylabel("Metric Score", color="#94a3b8")
-    ax1.legend(loc="lower left", fontsize=9)
+    ax1.legend(loc="lower left", fontsize=8.5, framealpha=0.9)
     ax1.grid(color="#1e293b", linestyle=":")
 
     cm = ml_res["cm_multi"]
+    cm_counts = ml_res["cm_multi_counts"]
     labels_short = ["NORMAL", "OVERHEAT", "BEARING_VIB", "PRESS_DROP"]
-    im = ax2.imshow(cm, cmap="Blues", vmin=0, vmax=1)
+    dark_cmap = LinearSegmentedColormap.from_list("odysseus_dark", ["#111827", "#1e3a8a", "#0284c7", "#00f0ff"])
+    im = ax2.imshow(cm, cmap=dark_cmap, vmin=0, vmax=1)
     ax2.set_xticks(range(len(labels_short)))
     ax2.set_yticks(range(len(labels_short)))
-    ax2.set_xticklabels(labels_short, color="#f8fafc", fontsize=8.5, rotation=20)
-    ax2.set_yticklabels(labels_short, color="#f8fafc", fontsize=8.5)
+    ax2.set_xticklabels(labels_short, color="#f8fafc", fontsize=9, fontweight="bold", rotation=15)
+    ax2.set_yticklabels(labels_short, color="#f8fafc", fontsize=9, fontweight="bold")
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
+            pct_val = cm[i, j] * 100.0
+            cnt_val = cm_counts[i, j]
+            txt_color = "#0f172a" if cm[i, j] > 0.65 else "#f8fafc"
             ax2.text(
                 j,
                 i,
-                f"{cm[i, j]*100:.1f}%",
+                f"{pct_val:.1f}%\n(n={cnt_val})",
                 ha="center",
                 va="center",
-                color="white" if cm[i, j] > 0.45 else "#0f172a",
-                fontsize=9.5,
+                color=txt_color,
+                fontsize=9,
                 fontweight="bold",
             )
-    ax2.set_title("Normalized Multiclass Root-Cause Confusion Matrix", color="#f8fafc", fontsize=11.5, fontweight="bold")
+    ax2.set_title("Normalized Multiclass Root-Cause Confusion Matrix (% & Count n)", color="#f8fafc", fontsize=11.5, fontweight="bold")
     ax2.set_xlabel("Predicted Failure Mode", color="#94a3b8")
     ax2.set_ylabel("True Failure Mode", color="#94a3b8")
     fig.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
@@ -703,12 +775,44 @@ def generate_all_visualizations(
     plt.close()
 
     # -------------------------------------------------------------------------
-    # Figure 05: SHAP Global Feature Importance (Top 15 Features)
+    # Figure 05: SHAP Global Feature Importance with Data Labels & Family Colors
     # -------------------------------------------------------------------------
-    shap_top = ml_res["shap_df"].iloc[:15].iloc[::-1]
-    fig, ax = plt.subplots(figsize=(11, 7), facecolor="#0a0e17")
+    shap_top = ml_res["shap_df"].iloc[:15].iloc[::-1].copy()
+    fig, ax = plt.subplots(figsize=(12, 7.5), facecolor="#0a0e17")
     ax.set_facecolor("#111827")
-    ax.barh(shap_top["Feature"], shap_top["Mean_Abs_SHAP"], color="#00f0ff", edgecolor="#f8fafc", alpha=0.88)
+
+    bar_colors = []
+    for feat in shap_top["Feature"]:
+        if "ratio" in feat or "interaction" in feat or "lag" in feat or "d_" in feat:
+            bar_colors.append("#00f0ff")  # Engineered Lag / Coupling / Derivative
+        elif "roll" in feat:
+            bar_colors.append("#f59e0b")  # Rolling Window Aggregation
+        else:
+            bar_colors.append("#10b981")  # Raw Instantaneous Sensor
+
+    bars = ax.barh(shap_top["Feature"], shap_top["Mean_Abs_SHAP"], color=bar_colors, edgecolor="#f8fafc", alpha=0.9)
+    max_val = float(shap_top["Mean_Abs_SHAP"].max())
+    ax.set_xlim(0, max_val * 1.15)
+
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(
+            w + max_val * 0.015,
+            bar.get_y() + bar.get_height() / 2.0,
+            f"{w:.3f}",
+            va="center",
+            ha="left",
+            color="#f8fafc",
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    legend_handles = [
+        Patch(facecolor="#00f0ff", edgecolor="#f8fafc", label="Engineered Coupling Ratios, Lags & Derivatives"),
+        Patch(facecolor="#f59e0b", edgecolor="#f8fafc", label="24h / 6h Rolling Window Aggregations"),
+        Patch(facecolor="#10b981", edgecolor="#f8fafc", label="Instantaneous Sensor Telemetry"),
+    ]
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=9, framealpha=0.9)
     ax.set_title("05. XAI SHAP GLOBAL FEATURE IMPORTANCE (MEAN |SHAP VALUE| IMPACT ON LOG-ODDS)", color="#f8fafc", fontsize=12, fontweight="bold")
     ax.set_xlabel("Mean |SHAP Value| (Magnitude of Contribution to Failure Prediction)", color="#94a3b8")
     ax.grid(color="#1e293b", linestyle=":", axis="x")
@@ -720,9 +824,9 @@ def generate_all_visualizations(
     plt.close()
 
     # -------------------------------------------------------------------------
-    # Figure 06: Time-Series Critical Threshold Forecast (Holt-Winters ISO-10816)
+    # Figure 06: Time-Series Critical Threshold Forecast (Both Mean & 95% CI Markers)
     # -------------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(13, 6), facecolor="#0a0e17")
+    fig, ax = plt.subplots(figsize=(13.5, 6.2), facecolor="#0a0e17")
     ax.set_facecolor("#111827")
 
     hist = forecast_res["history"]
@@ -732,20 +836,26 @@ def generate_all_visualizations(
     limit = forecast_res["critical_limit_mms"]
 
     ax.plot(hist.index, hist.values, color="#00f0ff", lw=2.0, label="Observed Vibration RMS History (mm/s)")
-    ax.plot(f_mean.index, f_mean.values, color="#f59e0b", lw=2.5, linestyle="--", label="Holt-Winters 24h Forecast (Mean)")
+    ax.plot(f_mean.index, f_mean.values, color="#f59e0b", lw=2.6, linestyle="--", label="Holt-Winters 24h Forecast (Mean)")
     ax.fill_between(f_mean.index, low95.values, up95.values, color="#f59e0b", alpha=0.22, label="95% Prediction Interval")
     ax.axhline(limit, color="#ef4444", lw=2.2, linestyle="-.", label=f"ISO-10816 Critical Limit ({limit} mm/s)")
+
+    h_ci95 = forecast_res["hours_to_critical_upper95"]
+    if h_ci95 is not None:
+        ci_ts = f_mean.index[h_ci95 - 1]
+        ax.axvline(ci_ts, color="#f59e0b", linestyle=":", lw=2.0, label=f"Early Warning (95% Upper CI): +{h_ci95}h ({ci_ts.strftime('%m-%d %H:%M')})")
+        ax.scatter([ci_ts], [up95.iloc[h_ci95 - 1]], color="#f59e0b", edgecolors="#f8fafc", s=95, zorder=6)
 
     h_crit = forecast_res["hours_to_critical_mean"]
     if h_crit is not None:
         cross_ts = f_mean.index[h_crit - 1]
-        ax.axvline(cross_ts, color="#10b981", linestyle=":", lw=2.0, label=f"Estimated Crossing: +{h_crit}h ({cross_ts.strftime('%m-%d %H:%M')})")
-        ax.scatter([cross_ts], [f_mean.iloc[h_crit - 1]], color="#ef4444", s=90, zorder=6)
+        ax.axvline(cross_ts, color="#10b981", linestyle="--", lw=2.2, label=f"Expected Mean Crossing: +{h_crit}h ({cross_ts.strftime('%m-%d %H:%M')})")
+        ax.scatter([cross_ts], [f_mean.iloc[h_crit - 1]], color="#ef4444", edgecolors="#f8fafc", s=110, zorder=7)
 
     ax.set_title("06. HOLT-WINTERS TIME-SERIES FORECASTING TOWARD ISO-10816 CRITICAL VIBRATION THRESHOLD", color="#f8fafc", fontsize=12, fontweight="bold")
     ax.set_xlabel("Timestamp (UTC)", color="#94a3b8")
     ax.set_ylabel("Vibration Velocity RMS (mm/s)", color="#94a3b8")
-    ax.legend(loc="upper left", fontsize=9, framealpha=0.85)
+    ax.legend(loc="upper left", fontsize=8.8, framealpha=0.9)
     ax.grid(color="#1e293b", linestyle=":")
 
     plt.tight_layout()

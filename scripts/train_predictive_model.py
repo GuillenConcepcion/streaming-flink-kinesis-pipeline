@@ -176,20 +176,33 @@ def generate_visualizations(y_test, y_prob_xgb, y_prob_rf, thresholds, costs, op
     plt.close()
     print(f"[✓] PR & ROC Curves saved to: {pr_roc_path}")
     
-    # 2. Cost Optimization Curve
-    fig, ax = plt.subplots(figsize=(12, 6), facecolor="#0a0e17")
+    # 2. Cost Optimization Curve (with Inset Zoom for Convex U-Curve Minimum)
+    fig, ax = plt.subplots(figsize=(12.5, 6.2), facecolor="#0a0e17")
     ax.set_facecolor("#111827")
     ax.plot(thresholds, costs / 1000.0, color="#00f0ff", lw=2.5, label="Expected Operational Cost ($k USD)")
     ax.axhline(baseline_cost / 1000.0, color="#ef4444", linestyle="--", lw=2.0, label=f"Unmanaged Baseline Cost (${baseline_cost/1000.0:,.0f}k)")
-    ax.axvline(opt_tau, color="#10b981", linestyle="--", lw=2.2, label=f"Optimal Decision Threshold (tau* = {opt_tau:.3f})")
-    ax.scatter([opt_tau], [np.min(costs) / 1000.0], color="#10b981", s=100, zorder=5)
-    
-    ax.set_title("COST-SENSITIVE DECISION CURVE (UNPLANNED DOWNTIME MINIMIZATION)", color="#f8fafc", fontsize=13, fontweight="bold")
+    ax.axvline(opt_tau, color="#10b981", linestyle="--", lw=2.2, label=f"Optimal Decision Threshold (tau* = {opt_tau:.4f} -> ${np.min(costs)/1000.0:.1f}k)")
+    ax.scatter([opt_tau], [np.min(costs) / 1000.0], color="#10b981", edgecolors="#f8fafc", s=110, zorder=5)
+
+    # Inset Zoom showing the U-shaped convex optimization valley around tau*
+    ax_ins = ax.inset_axes([0.12, 0.25, 0.48, 0.50])
+    ax_ins.set_facecolor("#0f172a")
+    ax_ins.plot(thresholds, costs / 1000.0, color="#00f0ff", lw=2.3)
+    ax_ins.axvline(opt_tau, color="#10b981", linestyle="--", lw=2.0)
+    ax_ins.scatter([opt_tau], [np.min(costs) / 1000.0], color="#ef4444", edgecolors="#f8fafc", s=95, zorder=6)
+    ax_ins.set_xlim(0.05, 0.85)
+    ax_ins.set_ylim(0, max(350.0, float(np.percentile(costs / 1000.0, 75))))
+    ax_ins.set_title(f"Zoom: Convex Cost Minimum at tau* = {opt_tau:.4f} (${np.min(costs)/1000.0:.1f}k)", color="#f8fafc", fontsize=9.5, fontweight="bold")
+    ax_ins.set_xlabel("Threshold (tau)", color="#94a3b8", fontsize=8.5)
+    ax_ins.set_ylabel("Cost ($k USD)", color="#94a3b8", fontsize=8.5)
+    ax_ins.grid(color="#334155", linestyle=":")
+
+    ax.set_title("COST-SENSITIVE DECISION CURVE & CONVEX MINIMUM ZOOM (UNPLANNED DOWNTIME MINIMIZATION)", color="#f8fafc", fontsize=12.5, fontweight="bold")
     ax.set_xlabel("Classification Decision Threshold (tau)", color="#94a3b8")
     ax.set_ylabel("Total Financial Cost ($k USD)", color="#94a3b8")
-    ax.legend(loc="upper right", framealpha=0.85)
+    ax.legend(loc="center right", framealpha=0.9)
     ax.grid(color="#1e293b", linestyle=":")
-    
+
     cost_curve_path = os.path.join(out_dir, "pdm_cost_curve_optimization.png")
     plt.tight_layout()
     plt.savefig(cost_curve_path, dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())

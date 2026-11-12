@@ -322,42 +322,79 @@ Calibrando el umbral de decisión $\tau^*$ estrictamente sobre el conjunto de **
 
 ---
 
-### 5. Galería de Visualizaciones Ejecutivas de Machine Learning & MLOps
+### 5. Galería de Visualizaciones Ejecutivas y Auditoría Visual (Puntos Fuertes & Decisiones de Diseño)
 
-#### Panel 01: Serie Temporal Multi-Sensor y Ventanas de Pre-Falla ($\le 12\text{h}$)
+Cada visualización ha sido sometida a una auditoría de **Visual Analytics** para maximizar el *Data-Ink Ratio* y evitar sesgos de interpretación visual en entornos industriales:
+
+#### Panel 01: Serie Temporal Multi-Sensor, Umbrales Críticos y Ventanas de Pre-Falla ($\le 12\text{h}$)
 <p align="center">
   <img src="docs/images/01_telemetry_degradation_timeline.png" alt="01 Telemetry Degradation Timeline" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Panel 02: Distribuciones Inferenciales de Violín ($p$ de Mann-Whitney, $D_{\mathrm{KS}}$ y $d$ de Cohen)
+* **🟢 Puntos Fuertes:** Sincronización temporal estricta (`sharex=True`) de las 3 magnitudes físicas acopladas; contrasta la señal instantánea frente a la inercia de la **media móvil de 24h** y sombrea la ventana causal de 12 horas previas al fallo.
+* **🛠️ Refinamiento Aplicado (Mitigación de Ambigüedad Multiclase):** Dado que un incidente de rodamientos/sobrecalentamiento (`BEARING_VIBRATION_WEAR` / `OVERHEAT_FAULT`) no necesariamente deprime la presión estática en el mismo instante, se incorporaron **líneas horizontales de límite normativo** ($85.0^\circ\text{C}$, $6.5\text{ mm/s}$ ISO-10816 y $88.0\text{ kPa}$) y una **anotación directa del modo activo de falla** sobre la región sombreada.
+
+---
+
+#### Panel 02: Distribuciones Inferenciales de Violín con Boxplot Interno de Rango Intercuartílico ($\mathrm{IQR}$)
 <p align="center">
   <img src="docs/images/02_inferential_distributions_violin.png" alt="02 Inferential Distributions Violin" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Panel 03: Benchmark Comparativo de Curvas Precision-Recall (PR-AUC) y ROC-AUC
+* **🟢 Puntos Fuertes:** Evidencia visualmente la aparición de **colas pesadas asimétricas** en el régimen de pre-falla ($\text{Skewness} = +1.46$ en vibración y $-1.67$ en presión) e integra en el título el tamaño del efecto ($d$ de Cohen $= 3.75$), la divergencia $D_{\mathrm{KS}} = 0.82$ y el $p$-valor de Mann-Whitney ($2.2 \times 10^{-294}$).
+* **🛠️ Refinamiento Aplicado (Visibilidad de Cuartiles y Desbalance):** Un gráfico de violín estándar solo muestra la densidad kernel y oculta los cuartiles y el desbalance muestral. Se superpuso un **Boxplot interno ($P_{25}, P_{50}, P_{75}$)** dentro de cada violín y se explicitaron los tamaños muestrales reales ($n = 7,992$ vs. $n = 576$) en el eje X.
+
+---
+
+#### Panel 03: Benchmark Comparativo PR-AUC / ROC-AUC con Punto Operativo ($\tau^*$) y Zoom de Baja Falsa Alarma
 <p align="center">
   <img src="docs/images/03_model_benchmark_pr_roc_curves.png" alt="03 Model Benchmark PR & ROC Curves" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Panel 04: Calibración del Umbral de Probabilidad y Matriz de Confusión Multiclase (`OVERHEAT`, `BEARING_VIB`, `PRESS_DROP`)
+* **🟢 Puntos Fuertes:** A diferencia de curvas sintéticas idealizadas ($\text{AUC}=1.000$), este benchmark cronológico 70/15/15 exhibe el *trade-off* escalonado real entre Precision y Recall ($\text{PR-AUC} \in [0.936, 0.945]$) sobre clases desbalanceadas, incluyendo la línea base `No-Skill (0.112)`.
+* **🛠️ Refinamiento Aplicado (Descompresión ROC y Punto Operativo):** Se añadió una **estrella roja sobre la curva PR** señalando el punto exacto de operación calibrado ($\tau^* = 0.30 \implies \text{Precision} = 96.8\%, \text{Recall} = 84.0\%$) y un **recuadro de ampliación (*Inset Zoom*)** en la región crítica $\mathrm{FPR} \in [0.00, 0.15]$ de la curva ROC.
+
+---
+
+#### Panel 04: Calibración Suavizada del Umbral ($\tau^*$) y Matriz de Confusión Multiclase Dark-UI
 <p align="center">
   <img src="docs/images/04_threshold_optimization_and_multiclass_cm.png" alt="04 Threshold Optimization and Multiclass Confusion Matrix" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Panel 05: Explicabilidad Global XAI con SHAP (`shap.TreeExplainer` — Impacto $|\text{SHAP}|$)
+* **🟢 Puntos Fuertes:** Vincula la optimización del umbral de decisión en validación (izquierda) con la capacidad diagnóstica de causa raíz entre los 4 modos operativos (derecha).
+* **🛠️ Refinamientos Críticos Aplicados:**
+  1. **Eliminación de Mesetas Artificiales:** Los árboles con `scale_pos_weight` polarizan las probabilidades hacia $0$ y $1$, generando mesetas planas en $\tau \in [0.30, 0.80]$. Se graficó la respuesta suavizada de `XGB_HistGradientBoosting` junto con la cota mínima de precisión en planta ($80\%$).
+  2. **Paleta Dark-Mode Nativa y Conteos Absolutos $(n)$:** Se reemplazó el mapa de calor blanco (`Blues`) por un gradiente oscuro `#111827 -> #00f0ff` coherente con el dashboard, reportando **tanto el porcentaje normalizado como el conteo exacto $(n)$** por celda, permitiendo auditar la fuga temprana del $25\%$ hacia `NORMAL` en el inicio de la degradación.
+
+---
+
+#### Panel 05: Explicabilidad Global XAI con SHAP (`shap.TreeExplainer` — Magnitud y Familia de Variables)
 <p align="center">
-  <img src="docs/images/05_shap_global_feature_importance.png" alt="05 SHAP Global Feature Importance" width="90%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
+  <img src="docs/images/05_shap_global_feature_importance.png" alt="05 SHAP Global Feature Importance" width="92%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Panel 06: Proyección de Serie Temporal Holt-Winters 24h frente al Límite Crítico ISO-10816 ($6.5\text{ mm/s}$)
+* **🟢 Puntos Fuertes:** Demuestra cuantitativamente que las **variables de ingeniería física y rezagos del Feature Store** (`vib_pressure_ratio` con $|\text{SHAP}| = 0.932$ y `vib_lag_1h` con $0.702$) aportan más del doble de poder predictivo que las lecturas crudas de los sensores.
+* **🛠️ Refinamiento Aplicado:** Se añadieron **etiquetas numéricas directas (*Data Labels*)** en el extremo de cada barra y **codificación cromática por familia de característica** (Cian: ratios físicos y lags; Ámbar: agregaciones móviles 6h/24h; Esmeralda: sensores instantáneos).
+
+---
+
+#### Panel 06: Proyección Holt-Winters 24h con Doble Alerta de Cruce Normativo ISO-10816 ($6.5\text{ mm/s}$)
 <p align="center">
   <img src="docs/images/06_timeseries_critical_threshold_forecast.png" alt="06 Holt-Winters Time-Series Critical Threshold Forecast" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
 
-#### Paneles Adicionales: Optimización de Costos Financieros Asimétricos y Ganancia en XGBoost
+* **🟢 Puntos Fuertes:** Modela simultáneamente la deriva cuadrática de fatiga mecánica y el ciclo diurno de 24 horas con bandas de predicción al 95%.
+* **🛠️ Refinamiento Aplicado (Doble Horizonte de Intervención):** En lugar de reportar un único cruce determinista, el gráfico señala **dos hitos operativos**: la **Alerta Temprana Conservadora (Cruce de la Banda Superior IC 95%)** y el **Cruce Esperado de la Media**, entregando a ingeniería de mantenimiento una ventana acotada de intervención preventiva.
+
+---
+
+#### Panel 07: Curva de Optimización de Costos Financieros con Recuadro de Ampliación (*Convex Valley Inset Zoom*)
 <p align="center">
   <img src="docs/images/pdm_cost_curve_optimization.png" alt="Odysseus PdM — Curva de Optimización de Costos Financieros" width="100%" style="border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);" />
 </p>
+
+* **🟢 Puntos Fuertes:** Cuantifica el ahorro neto de **\$78.78M USD (99.9%)** al contrastar el costo reactivo no gestionado (\$78,850k USD) frente al modelo calibrado (\$63.5k USD).
+* **🛠️ Refinamiento Crítico Aplicado (Resolución del Aplastamiento de Escala Y):** Dado que la relación entre \$78,850k y \$63.5k es superior a $1,200:1$, una escala lineal simple aplasta la curva azul contra el eje inferior ($Y \approx 0$). Se incorporó un **Zoom Inset central** que amplía el rango $\$0\text{k} - \$350\text{k USD}$, haciendo perfectamente visible la forma convexa en "U" del mínimo financiero en $\tau^* = 0.4635$.
 
 ---
 

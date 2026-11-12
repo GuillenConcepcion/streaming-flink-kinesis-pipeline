@@ -190,7 +190,7 @@
   ],
   "holt_winters_forecast": {
     "critical_limit_mms": 6.5,
-    "hours_to_critical_mean": null,
-    "hours_to_critical_upper95": 20
+    "hours_to_critical_mean": 16,
+    "hours_to_critical_upper95": 7
   }
 }
