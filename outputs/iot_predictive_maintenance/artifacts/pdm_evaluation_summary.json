@@ -1,0 +1,196 @@
+{
+  "descriptive_stats": [
+    {
+      "Sensor": "temperature",
+      "Regime": "Normal (0)",
+      "Count": 7992,
+      "Mean": 61.983745783467555,
+      "Std": 2.2605272276948307,
+      "Median_P50": 61.95435143193947,
+      "IQR": 3.396074674078662,
+      "Skewness": -0.00765401905886964,
+      "Kurtosis": -0.5315842054189375
+    },
+    {
+      "Sensor": "temperature",
+      "Regime": "Pre-Failure <=12h (1)",
+      "Count": 576,
+      "Mean": 70.18354953475107,
+      "Std": 7.334598163262099,
+      "Median_P50": 68.55271711557799,
+      "IQR": 6.7686228211432535,
+      "Skewness": 1.3677111264566477,
+      "Kurtosis": 1.7378694466069229
+    },
+    {
+      "Sensor": "vibration",
+      "Regime": "Normal (0)",
+      "Count": 7992,
+      "Mean": 1.6168077043140432,
+      "Std": 0.25848039385875277,
+      "Median_P50": 1.6114636713592285,
+      "IQR": 0.3598690112780618,
+      "Skewness": 0.2469077047389523,
+      "Kurtosis": -0.02876946687905324
+    },
+    {
+      "Sensor": "vibration",
+      "Regime": "Pre-Failure <=12h (1)",
+      "Count": 576,
+      "Mean": 3.1765531979116477,
+      "Std": 1.282581123571804,
+      "Median_P50": 2.9054863569576783,
+      "IQR": 1.2316143784908409,
+      "Skewness": 1.45615767272433,
+      "Kurtosis": 1.9817227730375722
+    },
+    {
+      "Sensor": "pressure",
+      "Regime": "Normal (0)",
+      "Count": 7992,
+      "Mean": 101.9928263103197,
+      "Std": 1.1390374156224303,
+      "Median_P50": 101.9756759437372,
+      "IQR": 1.5733809647534684,
+      "Skewness": 0.031108455338465308,
+      "Kurtosis": -0.2267800725638356
+    },
+    {
+      "Sensor": "pressure",
+      "Regime": "Pre-Failure <=12h (1)",
+      "Count": 576,
+      "Mean": 98.22107587850019,
+      "Std": 6.896071011896053,
+      "Median_P50": 101.34002974407878,
+      "IQR": 5.512546778908586,
+      "Skewness": -1.6670710968806663,
+      "Kurtosis": 1.67738807744312
+    }
+  ],
+  "inferential_tests": [
+    {
+      "Sensor": "temperature",
+      "Welch_t": 26.739720324671232,
+      "Welch_p": 2.1131720383913044e-103,
+      "MannWhitney_U": 4189977.0,
+      "MannWhitney_p": 7.01717182788937e-238,
+      "KS_stat": 0.6947885385385386,
+      "KS_p": 1.0060059097014512e-256,
+      "Cohens_d": 2.8328971199684982,
+      "ANOVA_F": 1968.790727759481,
+      "ANOVA_p": 0.0,
+      "ADF_stat": -10.420762359814823,
+      "ADF_p": 1.707105734991908e-18
+    },
+    {
+      "Sensor": "vibration",
+      "Welch_t": 29.143749964387688,
+      "Welch_p": 1.3969058372090493e-115,
+      "MannWhitney_U": 4404114.0,
+      "MannWhitney_p": 2.233854811663617e-294,
+      "KS_stat": 0.815847097097097,
+      "KS_p": 1.823e-321,
+      "Cohens_d": 3.752704491300976,
+      "ANOVA_F": 3390.796398073306,
+      "ANOVA_p": 0.0,
+      "ADF_stat": -8.33649650638684,
+      "ADF_p": 3.2616724916869973e-13
+    },
+    {
+      "Sensor": "pressure",
+      "Welch_t": -13.113720351266688,
+      "Welch_p": 1.4212596677589676e-34,
+      "MannWhitney_U": 1601174.0,
+      "MannWhitney_p": 2.4845680145896416e-34,
+      "KS_stat": 0.29532657657657657,
+      "KS_p": 5.651515348101871e-42,
+      "Cohens_d": -1.7975927398579838,
+      "ANOVA_F": 3337.1917628476376,
+      "ANOVA_p": 0.0,
+      "ADF_stat": -7.992759575894648,
+      "ADF_p": 2.449362663548264e-12
+    }
+  ],
+  "models_benchmark": {
+    "LightGBM_EWS": {
+      "pr_auc": 0.9361495459117152,
+      "roc_auc": 0.9740829928001558,
+      "optimal_threshold": 0.07,
+      "precision": 0.968,
+      "recall": 0.8402777777777778,
+      "f1": 0.8996282527881041,
+      "baseline_cost_usd": 7200000.0,
+      "optimized_cost_usd": 1152000.0,
+      "net_savings_usd": 6048000.0
+    },
+    "XGB_HistGradientBoosting": {
+      "pr_auc": 0.9454274731593554,
+      "roc_auc": 0.9790936952714535,
+      "optimal_threshold": 0.30499999999999994,
+      "precision": 0.968,
+      "recall": 0.8402777777777778,
+      "f1": 0.8996282527881041,
+      "baseline_cost_usd": 7200000.0,
+      "optimized_cost_usd": 1152000.0,
+      "net_savings_usd": 6048000.0
+    },
+    "RandomForest_Balanced": {
+      "pr_auc": 0.9391115099643481,
+      "roc_auc": 0.9764119964973731,
+      "optimal_threshold": 0.25499999999999995,
+      "precision": 0.952,
+      "recall": 0.8263888888888888,
+      "f1": 0.8847583643122676,
+      "baseline_cost_usd": 7200000.0,
+      "optimized_cost_usd": 1253000.0,
+      "net_savings_usd": 5947000.0
+    }
+  },
+  "top_10_shap_features": [
+    {
+      "Feature": "vib_pressure_ratio",
+      "Mean_Abs_SHAP": 0.9322558944096456
+    },
+    {
+      "Feature": "vib_lag_1h",
+      "Mean_Abs_SHAP": 0.7023705318109842
+    },
+    {
+      "Feature": "vibration",
+      "Mean_Abs_SHAP": 0.3597918415612336
+    },
+    {
+      "Feature": "pressure",
+      "Mean_Abs_SHAP": 0.3470467995797024
+    },
+    {
+      "Feature": "temperature",
+      "Mean_Abs_SHAP": 0.3154905757225046
+    },
+    {
+      "Feature": "press_roll_avg_24h",
+      "Mean_Abs_SHAP": 0.30809502786539
+    },
+    {
+      "Feature": "thermo_vib_interaction",
+      "Mean_Abs_SHAP": 0.30141332923922287
+    },
+    {
+      "Feature": "vib_roll_max_24h",
+      "Mean_Abs_SHAP": 0.3002968870425497
+    },
+    {
+      "Feature": "vib_roll_avg_24h",
+      "Mean_Abs_SHAP": 0.27503663778502063
+    },
+    {
+      "Feature": "press_lag_1h",
+      "Mean_Abs_SHAP": 0.2630217580351885
+    }
+  ],
+  "holt_winters_forecast": {
+    "critical_limit_mms": 6.5,
+    "hours_to_critical_mean": null,
+    "hours_to_critical_upper95": 20
+  }
+}

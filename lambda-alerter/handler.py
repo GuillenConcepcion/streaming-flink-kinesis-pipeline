@@ -35,31 +35,42 @@ sns = boto3.client("sns", endpoint_url=ENDPOINT_URL, config=boto_config)
 
 def score_predictive_risk(alert: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes calibrated empirical probability of failure within the 6-hour prediction horizon
-    based on physics-coupled features and the cost-sensitive decision boundary.
+    Computes calibrated empirical probability of failure within the 6-12h prediction horizon
+    and diagnoses the specific root-cause failure mode (OVERHEAT_FAULT,
+    BEARING_VIBRATION_WEAR, PRESSURE_VALVE_DROP, or NORMAL).
     """
     temp = float(alert.get("trigger_temperature", 65.0))
     vib = float(alert.get("trigger_vibration", 1.5))
+    press = float(alert.get("trigger_pressure", 102.0))
 
-    # Sigmoid projection calibrated against offline XGBoost model
-    # Nominal baseline (T=62, V=1.2) -> z < -3.0 -> P < 0.05
-    # Warning regime (T=78, V=4.5)   -> z ~ 0.5  -> P ~ 0.62 >= tau*
-    # Catastrophic   (T=88, V=7.2)   -> z > 4.0  -> P > 0.98
+    # Sigmoid projection calibrated against offline LightGBM/XGBoost model
     z = (0.12 * (temp - 74.0)) + (0.75 * (vib - 3.8))
     prob = 1.0 / (1.0 + (2.718281828459045 ** (-z)))
 
+    # Multiclass root-cause diagnosis
+    if prob < OPTIMAL_COST_THRESHOLD:
+        predicted_mode = "NORMAL"
+    elif press < 88.0:
+        predicted_mode = "PRESSURE_VALVE_DROP"
+    elif vib >= 5.2 and (vib - 3.8) * 10.0 >= (temp - 74.0):
+        predicted_mode = "BEARING_VIBRATION_WEAR"
+    else:
+        predicted_mode = "OVERHEAT_FAULT"
+
     if prob >= 0.70:
         risk_level = "CRITICAL_IMMINENT"
-        action = "DISPATCH_EMERGENCY_SHUTDOWN_INSPECTION"
+        action = f"DISPATCH_EMERGENCY_SHUTDOWN_INSPECTION [{predicted_mode}]"
     elif prob >= OPTIMAL_COST_THRESHOLD:
         risk_level = "ELEVATED_PREDICTIVE_RISK"
-        action = "SCHEDULE_PREVENTIVE_MAINTENANCE_NEXT_SHIFT"
+        action = f"SCHEDULE_PREVENTIVE_MAINTENANCE_NEXT_SHIFT [{predicted_mode}]"
     else:
         risk_level = "MONITORED_DEGRADATION"
         action = "LOG_TELEMETRY_NO_DISPATCH"
 
     return {
         "failure_probability": round(float(prob), 4),
+        "failure_probability_score": round(float(prob), 4),
+        "predicted_failure_mode": predicted_mode,
         "risk_level": risk_level,
         "recommended_action": action,
         "cost_threshold_applied": OPTIMAL_COST_THRESHOLD,
