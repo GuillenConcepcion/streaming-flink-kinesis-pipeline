@@ -130,3 +130,4 @@ Para garantizar que el plan de mantenimiento no se degrade con el paso de los me
    * Si $\mathrm{PSI} < 0.10$: El modelo continúa en producción sin cambios.
    * Si $0.10 \le \mathrm{PSI} < 0.25$: Se emite alerta de monitoreo intensivo y recalibración de umbral $\tau^*$.
    * Si $\mathrm{PSI} \ge 0.25$: Se dispara automáticamente el pipeline de **Reentrenamiento Continuo (CT)** ejecutando [`scripts/iot_predictive_maintenance_suite.py`](../scripts/iot_predictive_maintenance_suite.py) y actualizando el artefacto ONNX/Joblib.
+

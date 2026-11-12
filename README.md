@@ -422,23 +422,54 @@ Para cerrar el ciclo de ingeniería MLOps, el modelo entrenado se despliega medi
 
 ---
 
-### 7. Plan Maestro de Mantenimiento Ejecutivo y Operativo (Triaje de 4 Niveles y SOPs Prescriptivos)
+### 7. Plan Maestro de Mantenimiento Ejecutivo y Operativo (CoNVO, Toulmin, Triaje de 4 Niveles y SOPs Prescriptivos)
 
 > [!IMPORTANT]
-> El **Plan Maestro de Mantenimiento Basado en Predicción** (Marco Ejecutivo CoNVO/Toulmin, Presupuesto Financiero, Matriz de Triaje de 4 Niveles, Cronograma de Intervención $+0\text{h} / +7\text{h} / +16\text{h}$ y Playbooks SOP por modo de falla) se encuentra documentado íntegramente en **[`docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md`](docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md)**.
+> El **Plan Maestro de Mantenimiento Basado en Predicción** se encuentra documentado íntegramente en **[`docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md`](docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md)**.
 
-Para traducir las probabilidades del modelo (`XGB_HistGradientBoosting`), las atribuciones causales (`SHAP`) y el pronóstico de cruce normativo (`Holt-Winters ISO-10816`) en decisiones de planta sin fatiga de alertas, la operación se rige por una **Matriz de Triaje de 4 Niveles** y **3 Playbooks Prescriptivos (SOPs)**:
+#### 🏛️ Nivel Ejecutivo (C-Level): Marco CoNVO, Argumentación de Toulmin y KPIs de Negocio
+* **Contexto & Necesidad (C/N):** Bajo operación reactiva (*Run-to-Failure*), cada parada imprevista cuesta **$C_{\text{FN}} = \$50,000\text{ USD}$**, frente a **$C_{\text{FP}} = \$500\text{ USD}$** de una inspección programada (asimetría $100:1$). Se requiere transformar la telemetría de Flink/Kinesis en órdenes de trabajo prescriptivas con $6\text{h} - 16\text{h}$ de anticipación.
+* **Visión & Resultado (V/O):** Integración de probabilidades calibradas (`XGBoost` / `LightGBM`), atribución causal (`SHAP`) y pronóstico normativo **ISO-10816** (`Holt-Winters`) con el sistema **CMMS (SAP PM / Maximo)** vía SQS FIFO $\to$ Lambda $\to$ DynamoDB $\to$ SNS, logrando un **ahorro neto auditado de \$78,786,500 USD (99.9%)** con una **Precisión en planta del 92.55% al 96.80%**.
+* **Garantía Estadística (Toulmin):** Respaldado por una divergencia física demostrada ($d = +3.75$ en vibración, $p = 2.2 \times 10^{-294}$), $\text{PR-AUC} = 0.9454 - 0.9850$, y una barrera atómica SHA-256 en DynamoDB que elimina el 100% de las alertas duplicadas.
+
+| Indicador Clave (KPI) | Estado Anterior (Reactivo / Calendario) | Meta Operativa con Plataforma Odysseus PdM | Impacto Estratégico Auditado |
+| :--- | :---: | :---: | :--- |
+| **OEE (*Overall Equipment Effectiveness*)** | $74.0\% - 78.5\%$ | **$\ge 92.0\%$** | **$+14\%$ a $+16.7\%$** de disponibilidad neta de planta |
+| **MTBF (*Mean Time Between Failures*)** | $142 - 180\text{ horas}$ | **$> 720\text{ horas}$** | **$+300\%$** de extensión de vida útil de rodamientos y sellos |
+| **MTTR (*Mean Time To Repair*)** | $8.5 - 14.5\text{ horas}$ *(Rotura)* | **$1.2 - 2.0\text{ horas}$ *(Cambio en turno)* | **$-85\%$** en tiempo de parada por intervención |
+| **Tasa de Falsas Alarmas (*FDR*)** | $> 42.0\%$ *(Umbral estático)* | **$3.2\% - 7.4\%$** | Eliminación de la fatiga de alertas en ingeniería |
+| **Costo Medio por Incidente** | $\$50,000\text{ USD}$ *(Falla catastrófica)* | **$\$500\text{ USD}$ *(Inspección en turno)* | **$\$49,500\text{ USD}$ ahorrados por falla evitada** |
+
+---
+
+#### ⚙️ Nivel Operativo (Planta & Confiabilidad): Cronograma de 24h, Matriz de Triaje y SOPs por Modo de Falla
+
+```
++-------------------------------------------------------------------------------------------------------------------+
+|                                  CRONOGRAMA OPERATIVO DE INTERVENCIÓN (24 HORAS)                                  |
+|                                                                                                                   |
+|   [t + 0h]                       [t + 7h]                               [t + 16h]                     [> t + 16h] |
+|   Alerta Predictiva ML           Cruce Banda Superior IC 95%            Cruce Media Holt-Winters      Flink CEP   |
+|   (P >= 0.305 / 0.4635)          (Límite Conservador 6.5 mm/s)          (Límite Esperado 6.5 mm/s)    (T>85, V>6) |
+|         │                                      │                                       │                    │     |
+|         ▼                                      ▼                                       ▼                    ▼     |
+|   🟢/🟡 Alistamiento CMMS         🟠 VENTANA ÓPTIMA DE INTERVENCIÓN      🔴 MITIGACIÓN DE CARGA        ⚫ PARADA  |
+|   Reserva de repuestos y         Mantenimiento en cambio de turno       Derating eléctrico (-20%) y   DE EMERGENCIA
+|   asignación de cuadrilla        ($500 USD | Cero pérdida de planta)    reemplazo inmediato forzado   AUTOMÁTICA  |
++-------------------------------------------------------------------------------------------------------------------+
+```
 
 | Nivel de Alerta | Condición de Disparo (Regla Matemática) | Horizonte Restante | Acción Operativa en Planta (CMMS / SCADA) | SLA Respuesta | Costo Unitario |
 | :--- | :--- | :---: | :--- | :---: | :---: |
-| **🟢 NIVEL 0: Nominal** | $\hat{p} < 0.30 \;\land\; \hat{V}_{+24\text{h}}^{\text{Upper 95\%}} < 6.5\text{ mm/s}$ | $> 24\text{ horas}$ | Operación continua al 100% de carga nominal. Registro pasivo en Amazon S3 Parquet. | N/A | \$0 USD |
-| **🟡 NIVEL 1: Vigilancia (*Watch*)** | $0.30 \le \hat{p} < 0.46 \;\lor\; \hat{V}_{+12\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $7\text{h} - 16\text{h}$ | Pre-reserva de kit de repuestos en almacén según clase predicha ($\hat{y}_{\text{multi}}$) y notificación en dashboard de turno. | $< 4\text{ horas}$ | \$0 USD *(Pre-alerta)* |
-| **🟠 NIVEL 2: Preventivo Programado (*Optimal*)** | $\hat{p} \ge 0.4635 \;\land\; \hat{V}_{+7\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $4\text{h} - 7\text{h}$ *(Cruce IC 95%)* | **Creación automática de Orden de Trabajo (OT) Prioridad P2** vía SQS FIFO $\to$ Lambda $\to$ SNS. Intervención en cambio de turno. | $< 2\text{ horas}$ | **\$500 USD** *(Inspección)* |
-| **🔴 NIVEL 3: Crítico Inminente (*Emergency*)** | $\hat{p} \ge 0.75 \;\lor\; \hat{V}^{\text{Mean}} \ge 6.5\text{ mm/s} \;\lor\; \text{CEP Trigger}$ | $< 2\text{h}$ *(Cruce Media $+16\text{h}$)* | **Orden de Trabajo P1 Inmediata + Derating Automático de Carga al 70% en PLC**. Parada controlada asistida antes de fractura. | $< 15\text{ min}$ | \$2,500 USD *(Evita \$50k)* |
+| **🟢 NIVEL 0: Nominal** | $\hat{p} < 0.305 \;\land\; \hat{V}_{+24\text{h}}^{\text{Upper 95\%}} < 6.5\text{ mm/s}$ | $> 24\text{ horas}$ | Operación continua al 100% de carga nominal. Registro pasivo en Amazon S3 Parquet. | Monitoreo continuo | \$0 USD |
+| **🟡 NIVEL 1: Vigilancia (*Watch*)** | $0.305 \le \hat{p} < 0.4635 \;\lor\; \hat{V}_{+12\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $7\text{h} - 16\text{h}$ | Pre-reserva de kit de repuestos en almacén según clase predicha ($\hat{y}_{\text{multi}}$) y notificación en dashboard SCADA de turno. | $< 4\text{ horas}$ | \$0 USD *(Pre-alerta)* |
+| **🟠 NIVEL 2: Preventivo Programado (*Optimal*)** | $\hat{p} \ge 0.4635 \;\land\; \hat{V}_{+7\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $4\text{h} - 7\text{h}$ *(Cruce IC 95%)* | **Creación automática de Orden de Trabajo (OT) Prioridad P2** vía SQS FIFO $\to$ Lambda $\to$ SNS. Intervención en cambio de turno ($< +7\text{h}$). | $< 2\text{ horas}$ | **\$500 USD** *(Inspección)* |
+| **🔴 NIVEL 3: Crítico Inminente (*Emergency*)** | $\hat{p} \ge 0.70 \;\lor\; \hat{V}^{\text{Mean}} \ge 6.5\text{ mm/s} \;\lor\; \text{CEP Trigger}$ | $< 2\text{h}$ *(Cruce Media $+16\text{h}$)* | **Orden de Trabajo P1 Inmediata + Derating Automático de Carga (-20%) en PLC**. Parada controlada asistida antes de fractura. | $< 15\text{ min}$ | \$2,500 USD *(Evita \$50k)* |
 
-* **🔧 Playbook SOP-A (`BEARING_VIBRATION_WEAR` — Recall $72.9\%$, $|\text{SHAP}|$ `vib_lag_1h` $= 0.702$):** Despacho de Cuadrilla Mecánica/Tribología $\to$ Inspección ultrasónica y termografía de rodamiento principal $\to$ Relubricación sintética de alta viscosidad o reemplazo de cartucho y verificación de alineación láser ($< 0.05\text{ mm}$).
-* **🌡️ Playbook SOP-B (`OVERHEAT_FAULT` — Recall $70.8\%$, $|\text{SHAP}|$ `temp_roll_std_6h` $= 0.352$):** Despacho de Cuadrilla Electromecánica/Térmica $\to$ Purga de intercambiador de calor, verificación de caudal de glicol/agua y limpieza de filtros obstruidos.
-* **💨 Playbook SOP-C (`PRESSURE_VALVE_DROP` — Recall $87.5\%$, $|\text{SHAP}|$ `vib_pressure_ratio` $= 0.932$):** Despacho de Cuadrilla de Instrumentación/Neumática $\to$ Prueba de estanqueidad en colector principal, recalibración de válvula proporcional de alivio y sustitución de sellos elastoméricos.
+* **🔧 Playbook SOP-MECH-01 (`BEARING_VIBRATION_WEAR` — Recall $72.9\%$, $|\text{SHAP}|$ `vib_lag_1h` $= 0.702$, armónico FFT $120\text{ Hz}$):** Despacho de Cuadrilla Mecánica/Tribología $\to$ Medición de velocidad RMS en chumaceras e inspección de partículas metálicas en colector magnético $\to$ Relubricación sintética de alta viscosidad o reemplazo de cartucho de rodamiento y alineación láser del eje ($< 0.05\text{ mm}$).
+* **🔥 Playbook SOP-THERM-02 (`OVERHEAT_FAULT` — Recall $70.8\%$, $|\text{SHAP}|$ `temp_roll_std_6h` $= 0.352$, $\frac{dT}{dt} > +2.5^\circ\text{C/h}$):** Despacho de Cuadrilla Electromecánica/Térmica $\to$ *Load Derating* preventivo (-15% a -20%) e inspección termográfica infrarroja $\to$ Purga de intercambiador de calor, verificación de diferencial de presión y limpieza de filtros obstruidos.
+* **💨 Playbook SOP-PNEUM-03 (`PRESSURE_VALVE_DROP` — Recall $87.5\%$, $|\text{SHAP}|$ `vib_pressure_ratio` $= 0.932$, caída $< 92\text{ kPa}$):** Despacho de Cuadrilla de Instrumentación/Neumática $\to$ Detección ultrasónica de fugas en colector principal y conmutación a línea neumática redundante (*Bypass*) $\to$ Sustitución de empaquetadura/resorte de válvula de alivio y recalibración a $102.0 \pm 1.5\text{ kPa}$.
+* **🔄 Ciclo Cerrado MLOps (*Closed-Loop Feedback & PSI Drift*):** Al cerrar la OT en planta, la confirmación del ingeniero actualiza el histórico en S3/DynamoDB para `ATHENA_FEATURE_STORE_SQL`. Semanalmente se audita el **Population Stability Index ($\text{PSI}$)** de las 5 variables top SHAP: si $\text{PSI} \ge 0.25$, se dispara automáticamente el reentrenamiento continuo (`scripts/iot_predictive_maintenance_suite.py`).
 
 ---
 
