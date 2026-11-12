@@ -8,6 +8,7 @@
   <a href="https://guillenconcepcion.github.io/streaming-flink-kinesis-pipeline/"><img src="https://img.shields.io/badge/Live%20Architecture-Interactive%20Web%20Dashboard-0284c7?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Interactive Architecture Dashboard" /></a>
   <a href="docs/designs/flink_kinesis_streaming.md"><img src="https://img.shields.io/badge/EGM%20Spec-Canonical%20Design%20Doc-059669?style=for-the-badge&logo=markdown&logoColor=white" alt="Canonical Technical Spec" /></a>
   <a href="docs/designs/predictive_maintenance_data_science.md"><img src="https://img.shields.io/badge/ML%20PdM-Predictive%20Maintenance-8b5cf6?style=for-the-badge&logo=scikitlearn&logoColor=white" alt="Predictive Maintenance ML Specification" /></a>
+  <a href="docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md"><img src="https://img.shields.io/badge/Master%20Plan-Executive%20%26%20Operational%20PdM-d97706?style=for-the-badge&logo=opsgenie&logoColor=white" alt="Executive & Operational Maintenance Plan" /></a>
   <a href="docs/MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md"><img src="https://img.shields.io/badge/Mathematical%20Rigor-Formal%20Proofs%20%26%20EDA-4f46e5?style=for-the-badge&logo=latex&logoColor=white" alt="Mathematical Rigor and Formal Proofs" /></a>
 </p>
 
@@ -421,6 +422,26 @@ Para cerrar el ciclo de ingeniería MLOps, el modelo entrenado se despliega medi
 
 ---
 
+### 7. Plan Maestro de Mantenimiento Ejecutivo y Operativo (Triaje de 4 Niveles y SOPs Prescriptivos)
+
+> [!IMPORTANT]
+> El **Plan Maestro de Mantenimiento Basado en Predicción** (Marco Ejecutivo CoNVO/Toulmin, Presupuesto Financiero, Matriz de Triaje de 4 Niveles, Cronograma de Intervención $+0\text{h} / +7\text{h} / +16\text{h}$ y Playbooks SOP por modo de falla) se encuentra documentado íntegramente en **[`docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md`](docs/EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md)**.
+
+Para traducir las probabilidades del modelo (`XGB_HistGradientBoosting`), las atribuciones causales (`SHAP`) y el pronóstico de cruce normativo (`Holt-Winters ISO-10816`) en decisiones de planta sin fatiga de alertas, la operación se rige por una **Matriz de Triaje de 4 Niveles** y **3 Playbooks Prescriptivos (SOPs)**:
+
+| Nivel de Alerta | Condición de Disparo (Regla Matemática) | Horizonte Restante | Acción Operativa en Planta (CMMS / SCADA) | SLA Respuesta | Costo Unitario |
+| :--- | :--- | :---: | :--- | :---: | :---: |
+| **🟢 NIVEL 0: Nominal** | $\hat{p} < 0.30 \;\land\; \hat{V}_{+24\text{h}}^{\text{Upper 95\%}} < 6.5\text{ mm/s}$ | $> 24\text{ horas}$ | Operación continua al 100% de carga nominal. Registro pasivo en Amazon S3 Parquet. | N/A | \$0 USD |
+| **🟡 NIVEL 1: Vigilancia (*Watch*)** | $0.30 \le \hat{p} < 0.46 \;\lor\; \hat{V}_{+12\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $7\text{h} - 16\text{h}$ | Pre-reserva de kit de repuestos en almacén según clase predicha ($\hat{y}_{\text{multi}}$) y notificación en dashboard de turno. | $< 4\text{ horas}$ | \$0 USD *(Pre-alerta)* |
+| **🟠 NIVEL 2: Preventivo Programado (*Optimal*)** | $\hat{p} \ge 0.4635 \;\land\; \hat{V}_{+7\text{h}}^{\text{Upper 95\%}} \ge 6.5\text{ mm/s}$ | $4\text{h} - 7\text{h}$ *(Cruce IC 95%)* | **Creación automática de Orden de Trabajo (OT) Prioridad P2** vía SQS FIFO $\to$ Lambda $\to$ SNS. Intervención en cambio de turno. | $< 2\text{ horas}$ | **\$500 USD** *(Inspección)* |
+| **🔴 NIVEL 3: Crítico Inminente (*Emergency*)** | $\hat{p} \ge 0.75 \;\lor\; \hat{V}^{\text{Mean}} \ge 6.5\text{ mm/s} \;\lor\; \text{CEP Trigger}$ | $< 2\text{h}$ *(Cruce Media $+16\text{h}$)* | **Orden de Trabajo P1 Inmediata + Derating Automático de Carga al 70% en PLC**. Parada controlada asistida antes de fractura. | $< 15\text{ min}$ | \$2,500 USD *(Evita \$50k)* |
+
+* **🔧 Playbook SOP-A (`BEARING_VIBRATION_WEAR` — Recall $72.9\%$, $|\text{SHAP}|$ `vib_lag_1h` $= 0.702$):** Despacho de Cuadrilla Mecánica/Tribología $\to$ Inspección ultrasónica y termografía de rodamiento principal $\to$ Relubricación sintética de alta viscosidad o reemplazo de cartucho y verificación de alineación láser ($< 0.05\text{ mm}$).
+* **🌡️ Playbook SOP-B (`OVERHEAT_FAULT` — Recall $70.8\%$, $|\text{SHAP}|$ `temp_roll_std_6h` $= 0.352$):** Despacho de Cuadrilla Electromecánica/Térmica $\to$ Purga de intercambiador de calor, verificación de caudal de glicol/agua y limpieza de filtros obstruidos.
+* **💨 Playbook SOP-C (`PRESSURE_VALVE_DROP` — Recall $87.5\%$, $|\text{SHAP}|$ `vib_pressure_ratio` $= 0.932$):** Despacho de Cuadrilla de Instrumentación/Neumática $\to$ Prueba de estanqueidad en colector principal, recalibración de válvula proporcional de alivio y sustitución de sellos elastoméricos.
+
+---
+
 ## 🔬 Formulación Matemática, Modelado Estocástico y Fórmulas a Utilizar
 
 > [!NOTE]
@@ -619,6 +640,7 @@ experiments/streaming_flink_kinesis_pipeline/
 │   ├── index.html                                  # Live Interactive Architecture Dashboard (GitHub Pages)
 │   ├── LINKEDIN_POST.md                            # Executive Thought Leadership Publication Post
 │   ├── MATHEMATICAL_AND_STATISTICAL_ANALYSIS.md    # Formal Mathematical & Statistical Specification (PDF/MD)
+│   ├── EXECUTIVE_AND_OPERATIONAL_MAINTENANCE_PLAN.md # Master Executive & Operational Maintenance Plan (CoNVO, Triage & SOPs)
 │   ├── images/
 │   │   ├── hero_streaming_pipeline.png             # 16:9 Branded Hero Banner with Typography
 │   │   ├── eda_multivariate_diagnostics.png        # 4-Panel Multivariate Statistical EDA Diagnostics
